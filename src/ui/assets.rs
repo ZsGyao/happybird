@@ -10,12 +10,15 @@ use url::Url;
 use crate::ui::assets::bundled::BundledAssets;
 
 pub struct HappybirdAssetSource {
-    pool: SqlitePool,
+    // pool: SqlitePool,
 }
 
 impl HappybirdAssetSource {
-    pub fn new(pool: SqlitePool) -> Self {
-        Self { pool }
+    // pub fn new(pool: SqlitePool) -> Self {
+    //     Self { pool }
+    // }
+    pub fn new() -> Self {
+        Self {}
     }
 }
 
@@ -24,7 +27,7 @@ impl AssetSource for HappybirdAssetSource {
         let url = Url::parse(&path[1..])?;
 
         match url.scheme() {
-            "db" => db::load(&self.pool, url),
+            // "db" => db::load(&self.pool, url),
             "bundled" => BundledAssets::load(url),
             _ => panic!("invalid url scheme for resource"),
         }

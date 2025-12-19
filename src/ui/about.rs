@@ -1,0 +1,103 @@
+use gpui::{
+    FontWeight, InteractiveElement, IntoElement, ParentElement, RenderOnce,
+    StatefulInteractiveElement, Styled, div, img, px,
+};
+use gpui_component::ActiveTheme;
+use tracing::info;
+
+use super::{
+    components::modal::{OnExitHandler, modal},
+    theme::UsrTheme,
+};
+
+const LICENSE_URL: &str = "https://choosealicense.com/licenses/apache-2.0/";
+
+#[derive(IntoElement)]
+pub struct AboutDialog {
+    on_exit: &'static OnExitHandler,
+}
+
+impl RenderOnce for AboutDialog {
+    fn render(self, _: &mut gpui::Window, cx: &mut gpui::App) -> impl gpui::IntoElement {
+        let theme = cx.global::<UsrTheme>();
+        let version = env!("CARGO_PKG_VERSION");
+
+        modal().on_exit(self.on_exit).child(
+            div()
+                .p(px(20.0))
+                .pb(px(18.0))
+                .flex()
+                .child(img("!bundled:images/logo.png").w(px(66.0)).mr(px(20.0)))
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .child(
+                            div().flex().mr(px(200.0)).child(
+                                div()
+                                    .child(
+                                        div()
+                                            .font_weight(FontWeight::BOLD)
+                                            .font_family("Lexend")
+                                            .text_size(px(36.0))
+                                            .line_height(px(36.0))
+                                            .ml(px(-2.0))
+                                            .child("Happybird"),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_size(px(13.0))
+                                            .line_height(px(13.0))
+                                            .text_color(cx.theme().colors.chart_2)
+                                            .mt(px(1.0))
+                                            .child(format!("{version}")),
+                                    ),
+                            ),
+                        )
+                        .child(
+                            div().mt(px(15.0)).flex().child(
+                                div()
+                                    .text_sm()
+                                    .text_size(px(13.0))
+                                    .text_color(cx.theme().colors.chart_1)
+                                    .child(
+                                        div()
+                                            .font_weight(FontWeight::MEDIUM)
+                                            .text_size(px(14.0))
+                                            .text_color(theme.text_about_desc)
+                                            .child("Happybird is a gift to shanshan from yaoyao."),
+                                    )
+                                    .child(div().child(
+                                        "Copyright © 2025 - 2026 Zhou guangyao and Shi shan.",
+                                    ))
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .child(
+                                                "Licensed under the Apache License, version 2.0. ",
+                                            )
+                                            .child(
+                                                div()
+                                                    .id("about-rights-link")
+                                                    .cursor_pointer()
+                                                    .text_color(cx.theme().link)
+                                                    .hover(|this| {
+                                                        this.border_b_1()
+                                                            .border_color(cx.theme().link)
+                                                    })
+                                                    .on_click(|_, _, cx| {
+                                                        cx.open_url(LICENSE_URL);
+                                                    })
+                                                    .child("Learn more about your rights."),
+                                            ),
+                                    ),
+                            ),
+                        ),
+                ),
+        )
+    }
+}
+
+pub fn about_dialog(on_exit: &'static OnExitHandler) -> AboutDialog {
+    AboutDialog { on_exit }
+}

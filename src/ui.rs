@@ -1,2 +1,12 @@
+pub mod about;
 pub mod app;
 mod assets;
+mod components;
+pub mod constants;
+mod custom_avatar;
+mod custom_settings;
+mod custom_sidebar;
+mod header;
+mod models;
+mod theme;
+mod watch_list;

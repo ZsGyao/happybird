@@ -20,7 +20,7 @@ fn main() -> anyhow::Result<()> {
             .iter()
             .find_map(|key| std::env::var(key).ok())
             .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| "info,blade_graphics=warn,symphonia=warn,zbus=warn".to_owned()),
+            .unwrap_or_else(|| "debug,blade_graphics=warn,symphonia=warn,zbus=warn".to_owned()),
     )?;
 
     reg.with(
