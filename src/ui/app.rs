@@ -9,16 +9,20 @@ use gpui::{
     canvas, div, point, prelude::FluentBuilder, px, rgba, size, transparent_black,
 };
 
-use gpui_component::{ActiveTheme, Root};
+use gpui_component::{
+    ActiveTheme, Root,
+    list::{List, ListState},
+};
 use gpui_component_assets::Assets;
 use tracing::{debug, info};
 
 use crate::ui::{
     about::about_dialog,
-    constants::{APP_ROUNDING, APP_SHADOW_SIZE},
+    constants::{APP_ROUNDING, APP_SHADOW_SIZE, APP_SIDEBAR_W},
     custom_avatar::{self, CustomAvatar},
     custom_settings::{self, CustomSettings},
     custom_sidebar::CustomSidebar,
+    folder_browser::{FileBrowserDelegate, FileInfo},
     header::Header,
     models::{Models, build_models},
     theme::{UsrTheme, create_theme},
@@ -69,6 +73,8 @@ impl Render for WindowShadow {
         window.set_client_inset(shadow_size);
 
         let show_about = *self.show_about.clone().read(cx);
+
+        // let state = FileBrowserDelegate::new(cx, window);
 
         let mut element = div()
             .id("window-backdrop")
@@ -196,18 +202,22 @@ impl Render for WindowShadow {
                     .max_w_full()
                     .max_h_full()
                     .child(self.header.clone())
+                    .child(
+                        div()
+                            .flex()
+                            .h_full()
+                            .w_full()
+                            .child(self.sidebar.clone())
+                            .when(*cx.global::<Models>().show_folder.clone().read(cx), |div| {
+                                div.child(self.watch_list.clone())
+                            }), //.child(List::new(&state)),
+                    )
                     .when(show_about, |this| {
                         this.child(about_dialog(&|_, cx| {
                             let show_about = cx.global::<Models>().show_about.clone();
                             debug!("Folder show about exit");
                             show_about.write(cx, false);
                         }))
-                    })
-                    .child(div().child(self.sidebar.clone()))
-                    .h_full()
-                    .w_full()
-                    .when(*cx.global::<Models>().show_folder.clone().read(cx), |div| {
-                        div.child(self.watch_list.clone())
                     }),
             );
 
@@ -290,7 +300,7 @@ pub fn run() -> anyhow::Result<()> {
         let bounds = Bounds::centered(None, size(px(1024.0), px(700.0)), cx);
 
         // find_fonts(cx).expect("unable to load fonts");
-        create_theme(cx, SharedString::from("macOS Classic Dark"));
+        create_theme(cx, SharedString::from("Hybrid Dark"));
         build_models(cx);
         cx.activate(true);
 

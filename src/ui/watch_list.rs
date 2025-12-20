@@ -1,15 +1,17 @@
-use gpui::{App, AppContext, Entity, ParentElement, px};
-use gpui::{Render, Styled, div};
-use gpui_component::accordion::Accordion;
-use gpui_component::button::{Button, ButtonVariants};
-use gpui_component::checkbox::Checkbox;
-use gpui_component::group_box::{GroupBox, GroupBoxVariants};
-use gpui_component::label::Label;
-use gpui_component::radio::{Radio, RadioGroup};
-use gpui_component::select::Select;
-use gpui_component::{h_flex, v_flex};
+use std::vec;
 
-use crate::ui::constants::APP_SIDEBAR_W;
+use gpui::{
+    App, AppContext, Context, Entity, ParentElement, Render, Styled, Window, div,
+    prelude::FluentBuilder,
+};
+use gpui_component::{
+    ActiveTheme, Icon, IconName, IndexPath, h_flex,
+    label::Label,
+    list::{List, ListDelegate, ListItem, ListState},
+};
+use tracing::info;
+
+use crate::ui::folder_browser::FileBrowserDelegate;
 
 pub struct WatchList {}
 
@@ -25,28 +27,16 @@ impl Render for WatchList {
         window: &mut gpui::Window,
         cx: &mut gpui::Context<Self>,
     ) -> impl gpui::IntoElement {
-        div().border_l(px(200.0)).child(
-            GroupBox::new()
-                .title("Email Subscriptions")
-                .child(
-                    v_flex()
-                        .gap_2()
-                        .child(Checkbox::new("newsletter").label("Weekly Newsletter"))
-                        .child(Checkbox::new("updates").label("Product Updates"))
-                        .child(Checkbox::new("security").label("Security Alerts"))
-                        .child(Checkbox::new("marketing").label("Marketing Communications")),
-                )
-                .child(
-                    h_flex()
-                        .justify_between()
-                        .mt_4()
-                        .child(
-                            Button::new("unsubscribe-all")
-                                .link()
-                                .label("Unsubscribe All"),
-                        )
-                        .child(Button::new("save").primary().label("Update Preferences")),
-                ),
-        )
+        let state = FileBrowserDelegate::new(cx, window);
+        // div().child(List::new(&state))
+
+        List::new(&state)
+
+        // div()
+        //     .w_auto()
+        //     .h_full()
+        //     .border_r_1()
+        //     .border_color(cx.theme().sidebar_border)
+        //     .child(List::new(&state))
     }
 }

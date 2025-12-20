@@ -6,6 +6,7 @@ pub mod constants;
 mod custom_avatar;
 mod custom_settings;
 mod custom_sidebar;
+mod folder_browser;
 mod header;
 mod models;
 mod theme;
