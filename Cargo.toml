@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+chrono = "0.4.22"
 anyhow = "1.0"
 directories = "6"
 gpui = "0.2.2"

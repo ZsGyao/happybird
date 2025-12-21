@@ -1,5 +1,5 @@
 use gpui::{App, AppContext, Entity, ParentElement, Render, Styled, div, px};
-use gpui_component::{Icon, IconName, StyledExt, button::Button};
+use gpui_component::{Icon, IconName, button::Button};
 use tracing::info;
 
 pub struct CustomSettings {}

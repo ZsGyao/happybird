@@ -3,7 +3,6 @@ use gpui::{
     StatefulInteractiveElement, Styled, div, img, px,
 };
 use gpui_component::ActiveTheme;
-use tracing::info;
 
 use super::{
     components::modal::{OnExitHandler, modal},

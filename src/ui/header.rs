@@ -1,12 +1,7 @@
 use gpui::{prelude::FluentBuilder, *};
 use gpui_component::{Icon, IconName};
 
-use crate::ui::{
-    components::icons::{CROSS, MAXIMIZE, MINUS, icon},
-    constants::APP_ROUNDING,
-    models::Models,
-    theme::UsrTheme,
-};
+use crate::ui::{constants::APP_ROUNDING, models::Models, theme::UsrTheme};
 
 pub struct Header;
 

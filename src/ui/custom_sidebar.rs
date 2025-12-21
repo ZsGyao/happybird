@@ -1,21 +1,15 @@
-use std::process::Child;
-
-use gpui::prelude::FluentBuilder;
 use gpui::{
-    App, AppContext, Context, InteractiveElement, IntoElement, ParentElement, Render, RenderOnce,
-    Window, div, px,
+    App, AppContext, Context, IntoElement, ParentElement, Render, RenderOnce, Window, div, px,
 };
 use gpui::{Entity, Styled};
-use gpui_component::accordion::Accordion;
 use gpui_component::sidebar::{Sidebar, SidebarGroup, SidebarMenu, SidebarMenuItem};
 use gpui_component::{ActiveTheme, Icon, IconName, Side, StyledExt};
-use tracing::{debug, info};
+use tracing::info;
 
 use crate::ui::constants::APP_SIDEBAR_W;
 use crate::ui::custom_avatar::CustomAvatar;
 use crate::ui::custom_settings::CustomSettings;
 use crate::ui::models::Models;
-use crate::ui::watch_list::WatchList;
 
 pub struct CustomSidebar {
     // is_open_home: Entity<bool>,
@@ -27,7 +21,6 @@ impl CustomSidebar {
     pub fn new(cx: &mut App) -> Entity<Self> {
         let custom_avatar = CustomAvatar::new(cx);
         let custom_settings = CustomSettings::new(cx);
-        let watch_list = WatchList::new(cx);
 
         cx.new(|_| CustomSidebar {
             custom_avatar,

@@ -1,23 +1,20 @@
-use std::vec;
-
-use gpui::{
-    App, AppContext, Context, Entity, ParentElement, Render, Styled, Window, div,
-    prelude::FluentBuilder,
-};
+use gpui::{App, AppContext, Entity, ParentElement, Render, Styled, Window, div};
 use gpui_component::{
-    ActiveTheme, Icon, IconName, IndexPath, h_flex,
-    label::Label,
-    list::{List, ListDelegate, ListItem, ListState},
+    ActiveTheme,
+    list::{List, ListState},
 };
-use tracing::info;
 
-use crate::ui::folder_browser::FileBrowserDelegate;
+use crate::ui::info_browser::InfoBrowserDelegate;
 
-pub struct WatchList {}
+pub struct WatchList {
+    list_state: Entity<ListState<InfoBrowserDelegate>>,
+}
 
 impl WatchList {
-    pub fn new(cx: &mut App) -> Entity<Self> {
-        cx.new(|_cx| WatchList {})
+    pub fn new(cx: &mut App, window: &mut Window) -> Entity<Self> {
+        cx.new(|cx| WatchList {
+            list_state: InfoBrowserDelegate::new(cx, window),
+        })
     }
 }
 
@@ -27,16 +24,10 @@ impl Render for WatchList {
         window: &mut gpui::Window,
         cx: &mut gpui::Context<Self>,
     ) -> impl gpui::IntoElement {
-        let state = FileBrowserDelegate::new(cx, window);
-        // div().child(List::new(&state))
-
-        List::new(&state)
-
-        // div()
-        //     .w_auto()
-        //     .h_full()
-        //     .border_r_1()
-        //     .border_color(cx.theme().sidebar_border)
-        //     .child(List::new(&state))
+        div()
+            .w_1_5()
+            .border_1()
+            .border_color(cx.theme().sidebar_border)
+            .child(List::new(&self.list_state.clone()))
     }
 }

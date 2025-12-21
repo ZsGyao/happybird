@@ -1,5 +1,5 @@
 use gpui::*;
-use gpui_component::{ActiveTheme, Sizable, StyledExt, avatar::Avatar, h_flex, v_flex};
+use gpui_component::{ActiveTheme, StyledExt, avatar::Avatar};
 
 pub struct CustomAvatar;
 

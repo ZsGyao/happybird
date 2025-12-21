@@ -9,12 +9,9 @@ use gpui::{
     canvas, div, point, prelude::FluentBuilder, px, rgba, size, transparent_black,
 };
 
-use gpui_component::{
-    ActiveTheme, Root,
-    list::{List, ListState},
-};
+use gpui_component::{ActiveTheme, Root};
 use gpui_component_assets::Assets;
-use tracing::{debug, info};
+use tracing::debug;
 
 use crate::ui::{
     about::about_dialog,
@@ -345,7 +342,7 @@ pub fn run() -> anyhow::Result<()> {
                     show_about,
                     header: Header::new(cx),
                     sidebar: CustomSidebar::new(cx),
-                    watch_list: WatchList::new(cx),
+                    watch_list: WatchList::new(cx, window),
                 });
                 Root::new(view, window, cx)
             })

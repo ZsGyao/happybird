@@ -2572,6 +2572,7 @@ name = "happybird"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "directories",
  "gpui",
  "gpui-component",

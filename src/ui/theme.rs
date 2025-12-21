@@ -1,12 +1,8 @@
-use std::{fs::File, io::BufReader, path::PathBuf, sync::mpsc::channel, time::Duration};
+use std::path::PathBuf;
 
-use gpui::{App, AppContext, AsyncApp, EventEmitter, Global, Rgba, SharedString, rgb, rgba};
+use gpui::{App, Global, Rgba, SharedString, rgb, rgba};
 use gpui_component::{Theme, ThemeRegistry};
-use notify::{Event, RecursiveMode, Watcher};
 use serde::Deserialize;
-use tracing::{error, info, warn};
-
-use crate::ui::theme;
 
 #[derive(Deserialize, Clone)]
 #[serde(default)]
