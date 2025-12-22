@@ -1,4 +1,4 @@
-use gpui::{App, AppContext, Entity, ParentElement, Render, Styled, Window, div, rgb};
+use gpui::{App, AppContext, Entity, ParentElement, Render, Styled, Window, div, rgb, px};
 use gpui_component::{
     ActiveTheme,
     list::{List, ListState},
@@ -30,6 +30,8 @@ impl Render for WatchList {
             .flex_col()
             .border_1()
             .border_color(cx.theme().sidebar_border)
+            .bg(cx.theme().background)
+            .child(div().h(px(6.0)))
             .child(List::new(&self.list_state.clone()))
     }
 }

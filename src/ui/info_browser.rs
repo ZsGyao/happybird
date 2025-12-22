@@ -14,6 +14,7 @@ use gpui_component::{
     v_flex,
 };
 use tracing::debug;
+use crate::ui::constants::APP_ROUNDING;
 
 #[derive(Clone)]
 pub struct InfoBrowserDelegate {
@@ -191,6 +192,10 @@ impl ListDelegate for InfoBrowserDelegate {
         Some(
             ListItem::new(ix).child(
                 div()
+                    .rounded(APP_ROUNDING)
+                    .border_1()
+                    .border_color(cx.theme().border)
+                    .mt(px(2.0))
                     .child(
                         h_flex()
                             .items_center()
@@ -201,7 +206,7 @@ impl ListDelegate for InfoBrowserDelegate {
                                 h_flex()
                                     .items_center()
                                     .gap_2()
-                                    .child(Icon::new(icon))
+                                    .child(Icon::new(icon).size(px(18.0)))
                                     .child(Label::new(folder.users[ix.row].usr_name.clone())),
                             )
                             .child(
@@ -264,13 +269,15 @@ impl ListDelegate for InfoBrowserDelegate {
                 .bg(cx.theme().background)
                 .border_1()
                 .border_color(cx.theme().border)
+                .rounded(APP_ROUNDING)
+                .hover(|this| this.border_color(cx.theme().accent_foreground))
                 .child(
                     h_flex()
                         .items_center()
                         .gap_2()
                         .child(
                             Button::new("folder-id")
-                                .icon(Icon::new(chevron_icon))
+                                .icon(Icon::new(chevron_icon).size(px(16.0)))
                                 .on_click(cx.listener(move |this, _, _, cx| {
                                     this.delegate_mut().toggle_folder(section, cx);
                                 })),
@@ -278,13 +285,23 @@ impl ListDelegate for InfoBrowserDelegate {
                         .child(
                             Label::new(folder.info.folder_name.to_string())
                                 .text_color(cx.theme().accent_foreground)
-                                .font_weight(FontWeight::BOLD),
+                                .font_weight(FontWeight::BOLD)
+                                .text_size(px(13.0)),
                         ),
                 )
                 .child(
-                    Label::new(format!("{}", folder.users.len()))
-                        .text_xs()
-                        .text_color(cx.theme().muted_foreground),
+                    div()
+                        .px(px(8.0))
+                        .py(px(2.0))
+                        .rounded(px(999.0))
+                        .bg(cx.theme().background)
+                        .border_1()
+                        .border_color(cx.theme().border)
+                        .child(
+                            Label::new(format!("{}", folder.users.len()))
+                                .text_xs()
+                                .text_color(cx.theme().muted_foreground),
+                        ),
                 ),
         )
     }
