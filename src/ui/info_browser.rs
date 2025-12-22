@@ -3,7 +3,7 @@ use std::process::Child;
 use chrono::{DateTime, Local};
 use gpui::{
     App, AppContext, Context, Entity, FontWeight, ParentElement, Styled, Window, div,
-    prelude::FluentBuilder, px,
+    prelude::FluentBuilder, px, rgb,
 };
 use gpui_component::{
     ActiveTheme, Icon, IconName, IndexPath, Sizable, StyledExt,
@@ -13,6 +13,7 @@ use gpui_component::{
     list::{ListDelegate, ListItem, ListState},
     v_flex,
 };
+use tracing::debug;
 
 #[derive(Clone)]
 pub struct InfoBrowserDelegate {
@@ -53,7 +54,7 @@ impl InfoBrowserDelegate {
             filter_indices.push((idx, (0..folder.users.len()).collect::<Vec<usize>>()));
         }
 
-        let expanded_states = vec![true; folders.len()];
+        let expanded_states = vec![false; folders.len()];
 
         let delegate = Self {
             folders,
@@ -140,16 +141,23 @@ impl ListDelegate for InfoBrowserDelegate {
     type Item = ListItem;
 
     fn sections_count(&self, cx: &App) -> usize {
-        self.folders.len()
+        let count = self.folders.len();
+        debug!("Section count: {}", count);
+        count
     }
 
     fn items_count(&self, section: usize, cx: &App) -> usize {
         if self.expanded_states.get(section).copied().unwrap_or(false) {
-            self.folders
+            let count = self
+                .folders
                 .get(section)
                 .map(|folder| folder.users.len())
-                .unwrap_or(0)
+                .unwrap_or(0);
+            debug!("Items count: {}", count);
+
+            count
         } else {
+            debug!("Item not reach!");
             0
         }
     }
@@ -157,7 +165,7 @@ impl ListDelegate for InfoBrowserDelegate {
     fn render_item(
         &mut self,
         ix: IndexPath,
-        window: &mut Window,
+        _window: &mut Window,
         cx: &mut Context<ListState<Self>>,
     ) -> Option<Self::Item> {
         let folder = self.folders.get(ix.section)?;
@@ -179,13 +187,18 @@ impl ListDelegate for InfoBrowserDelegate {
                         h_flex()
                             .items_center()
                             .gap_2()
-                            .child(Icon::new(IconName::Sun))
-                            .child(Label::new(folder.info.folder_name.clone())),
+                            .child(Icon::new(icon))
+                            .child(Label::new(folder.users[ix.row].usr_name.clone())),
                     )
                     .child(
-                        Label::new(folder.info.folder_create_time.to_rfc3339())
-                            .text_sm()
-                            .text_color(cx.theme().muted_foreground),
+                        Label::new(format!(
+                            "{}",
+                            folder.users[ix.row]
+                                .usr_update_time
+                                .format("%d/%m/%Y %H:%M")
+                        ))
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground),
                     ),
             ), //.selected(Some(ix) == self.selected_index),
         )
@@ -194,7 +207,7 @@ impl ListDelegate for InfoBrowserDelegate {
     fn set_selected_index(
         &mut self,
         ix: Option<IndexPath>,
-        window: &mut Window,
+        _window: &mut Window,
         cx: &mut Context<ListState<Self>>,
     ) {
         self.selected_index = ix;
@@ -204,34 +217,55 @@ impl ListDelegate for InfoBrowserDelegate {
     fn render_section_header(
         &mut self,
         section: usize,
-        window: &mut Window,
+        _window: &mut Window,
         cx: &mut Context<ListState<Self>>,
     ) -> Option<impl gpui::IntoElement> {
-        let folder = self.folders.get(section)?;
-        let is_expanded = self.expanded_states.get(section).copied().unwrap_or(false);
+        // let folder = self.folders.get(section)?;
+        // let folder = match self.folders.get(section) {
+        //     Some(f) => {
+        //         debug!("  -> Folder found: {}", f.info.folder_name);
+        //         f
+        //     }
+        //     None => {
+        //         debug!("  -> ERROR: No folder for section {}", section);
+        //         return None; // 这会导致该section头不渲染！
+        //     }
+        // };
 
-        Some(
-            div()
-                .px_3()
-                .py_2()
-                .h_flex()
-                .justify_between()
-                .bg(cx.theme().background)
-                .border_1()
-                .border_color(cx.theme().border)
-                .child(
-                    Label::new(folder.info.folder_name.to_string())
-                        .text_color(cx.theme().accent_foreground)
-                        .font_weight(FontWeight::BOLD),
-                )
-                .child(
-                    Button::new("folder-id")
-                        .icon(Icon::new(IconName::ChevronDown))
-                        .small()
-                        .on_click(|_, _, _| {
-                            println!("Down click");
-                        }),
-                ),
-        )
+        // let view_handle = cx.entity().clone();
+
+        // debug!("render_section_header");
+
+        // Some(
+        //     div()
+        //         .px_3()
+        //         .py_2()
+        //         .h_flex()
+        //         .justify_between()
+        //         .bg(cx.theme().background)
+        //         .border_1()
+        //         .border_color(cx.theme().border)
+        //         .child(
+        //             Label::new(folder.info.folder_name.to_string())
+        //                 .text_color(cx.theme().accent_foreground)
+        //                 .font_weight(FontWeight::BOLD),
+        //         )
+        //         .child(
+        //             Button::new("folder-id")
+        //                 .icon(Icon::new(IconName::ChevronDown))
+        //                 .small()
+        //                 .on_click(move |_, _, cx| {
+        //                     view_handle.update(cx, |list_state, cx| {
+        //                         if let Some(state) =
+        //                             list_state.delegate_mut().expanded_states.get_mut(section)
+        //                         {
+        //                             *state = !*state;
+        //                             cx.notify();
+        //                         }
+        //                     })
+        //                 }),
+        //         ),
+
+        Some(div().child(Label::new(format!("SECTION {} - PLAIN TEXT", section))))
     }
 }
