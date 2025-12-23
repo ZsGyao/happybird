@@ -1,9 +1,10 @@
 use std::process::Child;
 
+use crate::ui::constants::APP_ROUNDING;
 use chrono::{DateTime, Local};
 use gpui::{
-    App, AppContext, Context, Entity, FontWeight, ParentElement, Styled, Window, div,
-    prelude::FluentBuilder, px, rgb, InteractiveElement, StatefulInteractiveElement,
+    App, AppContext, Context, Entity, FontWeight, InteractiveElement, ParentElement, SharedString,
+    StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder, px, rgb,
 };
 use gpui_component::{
     ActiveTheme, Icon, IconName, IndexPath, Sizable, StyledExt,
@@ -14,7 +15,6 @@ use gpui_component::{
     v_flex,
 };
 use tracing::debug;
-use crate::ui::constants::APP_ROUNDING;
 
 #[derive(Clone)]
 pub struct InfoBrowserDelegate {
@@ -47,6 +47,10 @@ impl InfoBrowserDelegate {
                     UsrIsLiked::Normal,
                     Local::now(),
                 )],
+            },
+            FolderItem {
+                info: FolderInfo::new("Folder3".to_string(), Local::now(), Local::now()),
+                users: vec![],
             },
         ];
 
@@ -143,7 +147,6 @@ impl ListDelegate for InfoBrowserDelegate {
 
     fn sections_count(&self, cx: &App) -> usize {
         let count = self.folders.len();
-        debug!("Section count: {}", count);
         count
     }
 
@@ -154,12 +157,9 @@ impl ListDelegate for InfoBrowserDelegate {
                 .get(section)
                 .map(|folder| folder.users.len())
                 .unwrap_or(0);
-            debug!("Items count: {}", count);
 
             count
         } else {
-            // Ensure section headers render even when collapsed by returning a placeholder item
-            debug!("Section collapsed -> return 1 placeholder item");
             1
         }
     }
@@ -176,6 +176,7 @@ impl ListDelegate for InfoBrowserDelegate {
             .get(ix.section)
             .copied()
             .unwrap_or(false);
+        debug!("Section:{} is_expanded:{}", ix.section, is_expanded);
         if !is_expanded {
             return Some(ListItem::new(ix).child(div().h(px(0.0))));
         }
@@ -248,12 +249,7 @@ impl ListDelegate for InfoBrowserDelegate {
                 return None;
             }
         };
-        let view_handle = cx.entity().clone();
-        let is_expanded = self
-            .expanded_states
-            .get(section)
-            .copied()
-            .unwrap_or(false);
+        let is_expanded = self.expanded_states.get(section).copied().unwrap_or(false);
         let chevron_icon = if is_expanded {
             IconName::ChevronDown
         } else {
@@ -276,7 +272,7 @@ impl ListDelegate for InfoBrowserDelegate {
                         .items_center()
                         .gap_2()
                         .child(
-                            Button::new("folder-id")
+                            Button::new(SharedString::from(format!("forder-bn-id-{section}")))
                                 .icon(Icon::new(chevron_icon).size(px(16.0)))
                                 .on_click(cx.listener(move |this, _, _, cx| {
                                     this.delegate_mut().toggle_folder(section, cx);
