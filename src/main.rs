@@ -4,6 +4,7 @@ use tracing_subscriber::{fmt::format::FmtSpan, prelude::*};
 
 mod ui;
 
+#[allow(dead_code)]
 static RUNTIME: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()

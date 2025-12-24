@@ -1,4 +1,4 @@
-use gpui::{App, AppContext, Entity, ParentElement, Render, Styled, div, px};
+use gpui::{App, AppContext, Entity, ParentElement, Render, Styled, div};
 use gpui_component::{Icon, IconName, button::Button};
 use tracing::info;
 
@@ -13,8 +13,8 @@ impl CustomSettings {
 impl Render for CustomSettings {
     fn render(
         &mut self,
-        window: &mut gpui::Window,
-        cx: &mut gpui::Context<Self>,
+        _window: &mut gpui::Window,
+        _cx: &mut gpui::Context<Self>,
     ) -> impl gpui::IntoElement {
         div().justify_center().relative().child(
             Button::new("custom-settings")

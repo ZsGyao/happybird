@@ -1,130 +1,133 @@
-use std::process::Child;
-
 use crate::ui::constants::APP_ROUNDING;
 use chrono::{DateTime, Local};
 use gpui::{
-    App, AppContext, Context, Entity, FontWeight, InteractiveElement, ParentElement, SharedString,
-    StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder, px, rgb,
+    App, AppContext, Context, Entity, FontWeight, InteractiveElement, ParentElement, Render,
+    Styled, Window, div, prelude::FluentBuilder, px,
 };
 use gpui_component::{
-    ActiveTheme, Icon, IconName, IndexPath, Sizable, StyledExt,
-    button::Button,
+    ActiveTheme, Icon, IconName, IndexPath,
+    accordion::Accordion,
     h_flex,
     label::Label,
-    list::{ListDelegate, ListItem, ListState},
-    v_flex,
+    list::{List, ListDelegate, ListItem, ListState},
 };
-use tracing::debug;
+use tracing::info;
 
-#[derive(Clone)]
-pub struct InfoBrowserDelegate {
-    /// The folder info and child user info
-    pub folders: Vec<FolderItem>,
-    /// The search click and the filter index, usize1: folder index usize2: child item idex vec
-    pub filter_indices: Vec<(usize, Vec<usize>)>,
-    /// The folder expand state
-    pub expanded_states: Vec<bool>,
-    /// Selected folder index
-    pub selected_index: Option<IndexPath>,
+// The main component that will render the list of folders
+pub struct InfoBrowser {
+    folders: Vec<FolderEntry>,
 }
 
-impl InfoBrowserDelegate {
-    pub fn new(cx: &mut App, window: &mut Window) -> Entity<ListState<InfoBrowserDelegate>> {
-        let folders: Vec<FolderItem> = vec![
-            FolderItem {
-                info: FolderInfo::new("Folder1".to_string(), Local::now(), Local::now()),
-                users: vec![
+impl InfoBrowser {
+    pub fn new(cx: &mut App, window: &mut Window) -> Entity<Self> {
+        // Raw data for folders and users
+        let folder_data = vec![
+            (
+                FolderInfo::new("Folder1".to_string(), Local::now(), Local::now()),
+                vec![
                     UsrInfo::new("Jim".to_string(), UsrIsLiked::Liked, Local::now()),
                     UsrInfo::new("Aurora".to_string(), UsrIsLiked::Liked, Local::now()),
                     UsrInfo::new("Kim".to_string(), UsrIsLiked::Normal, Local::now()),
                     UsrInfo::new("Boss".to_string(), UsrIsLiked::Unliked, Local::now()),
                 ],
-            },
-            FolderItem {
-                info: FolderInfo::new("Folder2".to_string(), Local::now(), Local::now()),
-                users: vec![UsrInfo::new(
-                    "Aki".to_string(),
-                    UsrIsLiked::Normal,
-                    Local::now(),
-                )],
-            },
-            FolderItem {
-                info: FolderInfo::new("Folder3".to_string(), Local::now(), Local::now()),
-                users: vec![],
-            },
+            ),
+            (
+                FolderInfo::new("Folder2".to_string(), Local::now(), Local::now()),
+                vec![
+                    UsrInfo::new("Aki".to_string(), UsrIsLiked::Normal, Local::now()),
+                    UsrInfo::new("Alice".to_string(), UsrIsLiked::Normal, Local::now()),
+                ],
+            ),
+            (
+                FolderInfo::new("Folder3".to_string(), Local::now(), Local::now()),
+                vec![],
+            ),
         ];
 
-        let mut filter_indices: Vec<(usize, Vec<usize>)> = Vec::new();
-        for (idx, folder) in folders.iter().enumerate() {
-            filter_indices.push((idx, (0..folder.users.len()).collect::<Vec<usize>>()));
-        }
+        // Create `FolderEntry`s from the raw data
+        let folders = folder_data
+            .into_iter()
+            .map(|(info, users)| {
+                // For each group of users, create a delegate and a ListState entity
+                let user_delegate = UserListDelegate::new(users);
+                let user_list_state = cx.new(|cx| ListState::new(user_delegate, window, cx));
+                FolderEntry {
+                    info,
+                    user_list_state,
+                    is_expanded: true,
+                }
+            })
+            .collect();
 
-        let expanded_states = vec![false; folders.len()];
-
-        let delegate = Self {
-            folders,
-            filter_indices,
-            expanded_states,
-            selected_index: None,
-        };
-        cx.new(|cx| ListState::new(delegate, window, cx).searchable(true))
-    }
-
-    pub fn filter_indices_fill(&mut self) {
-        for (idx, folder) in self.folders.iter().enumerate() {
-            self.filter_indices
-                .push((idx, (0..folder.users.len()).collect::<Vec<usize>>()));
-        }
-    }
-
-    fn toggle_folder(&mut self, section: usize, cx: &mut Context<ListState<Self>>) {
-        if let Some(state) = self.expanded_states.get_mut(section) {
-            *state = !*state;
-            cx.notify();
-        }
+        cx.new(|_| Self { folders })
     }
 }
 
-#[derive(Clone)]
-pub struct FolderItem {
-    pub info: FolderInfo,
-    pub users: Vec<UsrInfo>,
-}
+impl Render for InfoBrowser {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl gpui::IntoElement {
+        let mut accordion = Accordion::new("info-browser-accordion")
+            .multiple(true)
+            .bordered(true);
 
-#[derive(Clone)]
-pub enum UsrIsLiked {
-    Liked,
-    Normal,
-    Unliked,
-}
+        for (index, folder) in &mut self.folders.iter().enumerate() {
+            let user_count = folder.user_list_state.read(cx).delegate().users.len();
 
-#[derive(Clone)]
-pub struct UsrInfo {
-    /// The insert user name
-    pub usr_name: String,
-    /// The user is liked
-    pub usr_liked: UsrIsLiked,
-    /// The user update time
-    pub usr_update_time: DateTime<Local>,
-}
-
-impl UsrInfo {
-    pub fn new(usr_name: String, usr_liked: UsrIsLiked, usr_update_time: DateTime<Local>) -> Self {
-        UsrInfo {
-            usr_name,
-            usr_liked,
-            usr_update_time,
+            accordion = accordion
+                .on_toggle_click(|_, _, _| {
+                    info!("Folder toggled");
+                })
+                .item(|item| {
+                    item.title(
+                        h_flex()
+                            .w_full()
+                            .items_center()
+                            .p_2()
+                            //.gap_3()
+                            .rounded(APP_ROUNDING)
+                            .hover(|s| s.bg(cx.theme().muted))
+                            .child(Icon::new(if folder.is_expanded {
+                                IconName::FolderOpen
+                            } else {
+                                IconName::Folder
+                            }))
+                            .child(
+                                Label::new(folder.info.folder_name.clone())
+                                    .font_weight(FontWeight::SEMIBOLD),
+                            )
+                            .child(div().flex_grow())
+                            .child(div().px_2().rounded_full().bg(cx.theme().border).when(
+                                user_count > 0,
+                                |this| {
+                                    this.child(
+                                        Label::new(format!("{}", user_count))
+                                            .text_xs()
+                                            .text_color(cx.theme().muted_foreground),
+                                    )
+                                },
+                            )),
+                    )
+                    .when(folder.is_expanded, |this| {
+                        this.child(List::new(&folder.user_list_state))
+                    })
+                });
         }
+
+        div().flex().flex_col().child(accordion)
     }
 }
 
+// A struct to hold all the data and state for a single folder
+struct FolderEntry {
+    info: FolderInfo,
+    is_expanded: bool,
+    user_list_state: Entity<ListState<UserListDelegate>>,
+}
+
+// Data model for a folder
 #[derive(Clone, Hash, PartialEq, Eq)]
 pub struct FolderInfo {
-    /// The folder name
     folder_name: String,
-    /// The folder last update time
     folder_update_time: DateTime<Local>,
-    /// The folder create time
     folder_create_time: DateTime<Local>,
 }
 
@@ -142,26 +145,48 @@ impl FolderInfo {
     }
 }
 
-impl ListDelegate for InfoBrowserDelegate {
+#[derive(Clone)]
+pub enum UsrIsLiked {
+    Liked,
+    Normal,
+    Unliked,
+}
+
+// Data model for a user
+#[derive(Clone)]
+pub struct UsrInfo {
+    pub usr_name: String,
+    pub usr_liked: UsrIsLiked,
+    pub usr_update_time: DateTime<Local>,
+}
+
+impl UsrInfo {
+    pub fn new(usr_name: String, usr_liked: UsrIsLiked, usr_update_time: DateTime<Local>) -> Self {
+        UsrInfo {
+            usr_name,
+            usr_liked,
+            usr_update_time,
+        }
+    }
+}
+
+// Delegate for the list of users inside an accordion
+#[derive(Clone)]
+pub struct UserListDelegate {
+    pub users: Vec<UsrInfo>,
+}
+
+impl UserListDelegate {
+    pub fn new(users: Vec<UsrInfo>) -> Self {
+        Self { users }
+    }
+}
+
+impl ListDelegate for UserListDelegate {
     type Item = ListItem;
 
-    fn sections_count(&self, cx: &App) -> usize {
-        let count = self.folders.len();
-        count
-    }
-
-    fn items_count(&self, section: usize, cx: &App) -> usize {
-        if self.expanded_states.get(section).copied().unwrap_or(false) {
-            let count = self
-                .folders
-                .get(section)
-                .map(|folder| folder.users.len())
-                .unwrap_or(0);
-
-            count
-        } else {
-            1
-        }
+    fn items_count(&self, _section: usize, _cx: &App) -> usize {
+        self.users.len()
     }
 
     fn render_item(
@@ -170,33 +195,20 @@ impl ListDelegate for InfoBrowserDelegate {
         _window: &mut Window,
         cx: &mut Context<ListState<Self>>,
     ) -> Option<Self::Item> {
-        // Render a zero-height placeholder item for collapsed sections to keep headers visible
-        let is_expanded = self
-            .expanded_states
-            .get(ix.section)
-            .copied()
-            .unwrap_or(false);
-        debug!("Section:{} is_expanded:{}", ix.section, is_expanded);
-        if !is_expanded {
-            return Some(ListItem::new(ix).child(div().h(px(0.0))));
-        }
-
-        let folder = self.folders.get(ix.section)?;
-        let user = folder.users.get(ix.row)?;
-
+        let user = &self.users[ix.row];
+        let theme = cx.theme();
         let icon = match user.usr_liked {
             UsrIsLiked::Liked => IconName::Heart,
             UsrIsLiked::Normal => IconName::Bot,
             UsrIsLiked::Unliked => IconName::HeartOff,
         };
-
         Some(
             ListItem::new(ix).child(
                 div()
                     .rounded(APP_ROUNDING)
                     .border_1()
-                    .border_color(cx.theme().border)
-                    .mt(px(2.0))
+                    .border_color(theme.border)
+                    .m_1()
                     .child(
                         h_flex()
                             .items_center()
@@ -208,97 +220,28 @@ impl ListDelegate for InfoBrowserDelegate {
                                     .items_center()
                                     .gap_2()
                                     .child(Icon::new(icon).size(px(18.0)))
-                                    .child(Label::new(folder.users[ix.row].usr_name.clone())),
+                                    .child(Label::new(user.usr_name.clone())),
                             )
                             .child(
                                 Label::new(format!(
                                     "{}",
-                                    folder.users[ix.row]
-                                        .usr_update_time
-                                        .format("%d/%m/%Y %H:%M")
+                                    user.usr_update_time.format("%d/%m/%Y %H:%M")
                                 ))
                                 .text_xs()
-                                .text_color(cx.theme().muted_foreground),
+                                .text_color(theme.muted_foreground),
                             ),
                     )
-                    .hover(|this| this.bg(cx.theme().background)),
+                    .hover(|this| this.bg(theme.background)),
             ),
         )
     }
 
     fn set_selected_index(
         &mut self,
-        ix: Option<IndexPath>,
+        _ix: Option<IndexPath>,
         _window: &mut Window,
-        cx: &mut Context<ListState<Self>>,
+        _cx: &mut Context<ListState<Self>>,
     ) {
-        self.selected_index = ix;
-        cx.notify();
-    }
-
-    fn render_section_header(
-        &mut self,
-        section: usize,
-        _window: &mut Window,
-        cx: &mut Context<ListState<Self>>,
-    ) -> Option<impl gpui::IntoElement> {
-        let folder = match self.folders.get(section) {
-            Some(f) => f,
-            None => {
-                debug!("  -> ERROR: No folder for section {}", section);
-                return None;
-            }
-        };
-        let is_expanded = self.expanded_states.get(section).copied().unwrap_or(false);
-        let chevron_icon = if is_expanded {
-            IconName::ChevronDown
-        } else {
-            IconName::ChevronRight
-        };
-
-        Some(
-            h_flex()
-                .items_center()
-                .justify_between()
-                .w_full()
-                .p_3()
-                .bg(cx.theme().background)
-                .border_1()
-                .border_color(cx.theme().border)
-                .rounded(APP_ROUNDING)
-                .hover(|this| this.border_color(cx.theme().accent_foreground))
-                .child(
-                    h_flex()
-                        .items_center()
-                        .gap_2()
-                        .child(
-                            Button::new(SharedString::from(format!("forder-bn-id-{section}")))
-                                .icon(Icon::new(chevron_icon).size(px(16.0)))
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    this.delegate_mut().toggle_folder(section, cx);
-                                })),
-                        )
-                        .child(
-                            Label::new(folder.info.folder_name.to_string())
-                                .text_color(cx.theme().accent_foreground)
-                                .font_weight(FontWeight::BOLD)
-                                .text_size(px(13.0)),
-                        ),
-                )
-                .child(
-                    div()
-                        .px(px(8.0))
-                        .py(px(2.0))
-                        .rounded(px(999.0))
-                        .bg(cx.theme().background)
-                        .border_1()
-                        .border_color(cx.theme().border)
-                        .child(
-                            Label::new(format!("{}", folder.users.len()))
-                                .text_xs()
-                                .text_color(cx.theme().muted_foreground),
-                        ),
-                ),
-        )
+        // You could store the selected index in `UserListDelegate` if needed
     }
 }

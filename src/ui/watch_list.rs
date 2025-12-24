@@ -1,19 +1,19 @@
-use gpui::{App, AppContext, Entity, ParentElement, Render, Styled, Window, div, rgb, px};
+use gpui::{App, AppContext, Entity, ParentElement, Render, Styled, Window, div, px};
 use gpui_component::{
     ActiveTheme,
     list::{List, ListState},
 };
 
-use crate::ui::info_browser::InfoBrowserDelegate;
+use crate::ui::info_browser::InfoBrowser;
 
 pub struct WatchList {
-    list_state: Entity<ListState<InfoBrowserDelegate>>,
+    info_browser: Entity<InfoBrowser>,
 }
 
 impl WatchList {
     pub fn new(cx: &mut App, window: &mut Window) -> Entity<Self> {
         cx.new(|cx| WatchList {
-            list_state: InfoBrowserDelegate::new(cx, window),
+            info_browser: InfoBrowser::new(cx, window),
         })
     }
 }
@@ -21,7 +21,7 @@ impl WatchList {
 impl Render for WatchList {
     fn render(
         &mut self,
-        window: &mut gpui::Window,
+        _window: &mut gpui::Window,
         cx: &mut gpui::Context<Self>,
     ) -> impl gpui::IntoElement {
         div()
@@ -32,6 +32,6 @@ impl Render for WatchList {
             .border_color(cx.theme().sidebar_border)
             .bg(cx.theme().background)
             .child(div().h(px(6.0)))
-            .child(List::new(&self.list_state.clone()))
+            .child(self.info_browser.clone())
     }
 }

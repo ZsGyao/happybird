@@ -12,7 +12,7 @@ impl CustomAvatar {
 impl Render for CustomAvatar {
     fn render(
         &mut self,
-        window: &mut gpui::Window,
+        _window: &mut gpui::Window,
         cx: &mut gpui::Context<Self>,
     ) -> impl gpui::IntoElement {
         div().child(

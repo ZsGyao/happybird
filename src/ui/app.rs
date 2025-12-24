@@ -15,14 +15,11 @@ use tracing::debug;
 
 use crate::ui::{
     about::about_dialog,
-    constants::{APP_ROUNDING, APP_SHADOW_SIZE, APP_SIDEBAR_W},
-    custom_avatar::{self, CustomAvatar},
-    custom_settings::{self, CustomSettings},
+    constants::{APP_ROUNDING, APP_SHADOW_SIZE},
     custom_sidebar::CustomSidebar,
     header::Header,
-    info_browser::InfoBrowserDelegate,
     models::{Models, build_models},
-    theme::{UsrTheme, create_theme},
+    theme::create_theme,
     watch_list::WatchList,
 };
 
@@ -38,6 +35,7 @@ pub fn get_dirs() -> ProjectDirs {
         .expect("couldn't generate project dirs")
 }
 
+#[allow(dead_code)]
 pub fn find_fonts(cx: &mut App) -> gpui::Result<()> {
     let paths = cx.asset_source().list("!bundled:fonts")?;
     let mut fonts = vec![];
@@ -190,7 +188,7 @@ impl Render for WindowShadow {
                     .on_mouse_move(|_e, _, cx| {
                         cx.stop_propagation();
                     })
-                    .on_drop(|ev: &ExternalPaths, _, cx| {})
+                    .on_drop(|_ev: &ExternalPaths, _, _cx| {})
                     .overflow_hidden()
                     .bg(cx.theme().background)
                     .size_full()

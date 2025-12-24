@@ -3,6 +3,7 @@ use gpui::{IntoElement, RenderOnce, SharedString, StyleRefinement, Styled, Svg, 
 use crate::ui::theme::UsrTheme;
 
 #[derive(IntoElement)]
+#[allow(dead_code)]
 pub struct Icon {
     svg: Svg,
     icon: SharedString,
@@ -30,6 +31,7 @@ impl RenderOnce for Icon {
     }
 }
 
+#[allow(dead_code)]
 pub fn icon(icon: impl Into<SharedString>) -> Icon {
     Icon {
         svg: svg(),
