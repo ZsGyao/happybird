@@ -4,7 +4,8 @@ use gpui::{
 use gpui::{Entity, Styled};
 use gpui_component::sidebar::{Sidebar, SidebarGroup, SidebarMenu, SidebarMenuItem};
 use gpui_component::{ActiveTheme, Icon, IconName, Side, StyledExt};
-use tracing::info;
+
+use crate::zlog::log_impl::info;
 
 use crate::ui::constants::APP_SIDEBAR_W;
 use crate::ui::custom_avatar::CustomAvatar;

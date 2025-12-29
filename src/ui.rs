@@ -7,7 +7,6 @@ mod custom_avatar;
 mod custom_settings;
 mod custom_sidebar;
 mod header;
-mod info_browser;
 mod models;
 mod theme;
-mod watch_list;
+pub mod info_panel;

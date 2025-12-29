@@ -9,9 +9,12 @@ use gpui::{
     canvas, div, point, prelude::FluentBuilder, px, rgba, size, transparent_black,
 };
 
-use gpui_component::{ActiveTheme, Root};
+use crate::{debug, ui::info_panel::InfoPanel, zlog::log_impl::error};
+use gpui_component::{
+    ActiveTheme, Root, StyledExt,
+    resizable::{ResizablePanel, h_resizable, resizable_panel, v_resizable},
+};
 use gpui_component_assets::Assets;
-use tracing::debug;
 
 use crate::ui::{
     about::about_dialog,
@@ -20,10 +23,8 @@ use crate::ui::{
     custom_settings::{self, CustomSettings},
     custom_sidebar::CustomSidebar,
     header::Header,
-    info_browser::InfoBrowserDelegate,
     models::{Models, build_models},
     theme::{UsrTheme, create_theme},
-    watch_list::WatchList,
 };
 
 pub fn get_dirs() -> ProjectDirs {
@@ -58,7 +59,7 @@ struct WindowShadow {
     pub show_about: Entity<bool>,
     pub header: Entity<Header>,
     pub sidebar: Entity<CustomSidebar>,
-    pub watch_list: Entity<WatchList>,
+    pub info_panel: Entity<InfoPanel>,
 }
 
 impl Render for WindowShadow {
@@ -71,6 +72,7 @@ impl Render for WindowShadow {
 
         let show_about = *self.show_about.clone().read(cx);
 
+        // cala size
         // let state = FileBrowserDelegate::new(cx, window);
 
         let mut element = div()
@@ -147,11 +149,11 @@ impl Render for WindowShadow {
                         };
                     }),
             })
-            .size_full()
+            .size_full() // Set window render finish
             .child(
                 div()
                     .font_family("Inter")
-                    .text_color(cx.theme().chart_1)
+                    .text_color(cx.theme().colors.foreground)
                     .cursor(CursorStyle::Arrow)
                     .map(|div| match decorations {
                         Decorations::Server => div,
@@ -190,24 +192,64 @@ impl Render for WindowShadow {
                     .on_mouse_move(|_e, _, cx| {
                         cx.stop_propagation();
                     })
-                    .on_drop(|ev: &ExternalPaths, _, cx| {})
+                    .on_drop(|ev: &ExternalPaths, _, cx| {}) // 当有文件被拖到窗口上的行为，现在为空
                     .overflow_hidden()
-                    .bg(cx.theme().background)
+                    .bg(cx.theme().colors.background)
                     .size_full()
                     .flex()
-                    .flex_col()
+                    .v_flex()
                     .max_w_full()
                     .max_h_full()
-                    .child(self.header.clone())
+                    .child(self.header.clone()) // 从此，窗口被绘制完成
                     .child(
+                        // div()
+                        //     .flex()
+                        //     .h_full()
+                        //     .w_full()
+                        //     .child(self.sidebar.clone())
+                        //     .when(*cx.global::<Models>().show_folder.clone().read(cx), |div| {
+                        //         div.child(self.info_panel.clone())
+                        //     }), //.child(List::new(&state)),
                         div()
                             .flex()
+                            .h_flex()
                             .h_full()
-                            .w_full()
                             .child(self.sidebar.clone())
-                            .when(*cx.global::<Models>().show_folder.clone().read(cx), |div| {
-                                div.child(self.watch_list.clone())
-                            }), //.child(List::new(&state)),
+                            .child(
+                                h_resizable("center-dock")
+                                    .child(
+                                        resizable_panel()
+                                            .size(px(260.0))
+                                            .size_range(px(180.0)..px(540.0))
+                                            .child(
+                                                v_resizable("info-panel").child(
+                                                    resizable_panel()
+                                                        .size(px(200.0))
+                                                        .child("File Explorer"),
+                                                ),
+                                            ),
+                                    )
+                                    .child(
+                                        resizable_panel().child(
+                                            v_resizable("info-show-panel")
+                                                .child(resizable_panel().child("Info Show Panel"))
+                                                .child(
+                                                    resizable_panel()
+                                                        .size(px(150.0))
+                                                        .size_range(px(80.0)..px(210.0))
+                                                        .child("Bottom Terminal"),
+                                                ),
+                                        ),
+                                    )
+                                    .child(
+                                        v_resizable("right-panel").child(
+                                            resizable_panel()
+                                                .size(px(100.0))
+                                                .size_range(px(80.0)..px(180.0))
+                                                .child("Right panel"),
+                                        ),
+                                    ),
+                            ),
                     )
                     .when(show_about, |this| {
                         this.child(about_dialog(&|_, cx| {
@@ -272,13 +314,8 @@ fn resize_edge(
 pub fn run() -> anyhow::Result<()> {
     let dirs = get_dirs();
     let data_dir = dirs.data_dir().to_path_buf();
-    fs::create_dir_all(&data_dir).inspect_err(|error| {
-        tracing::error!(
-            ?error,
-            "couldn't create data directory '{}'",
-            data_dir.display(),
-        )
-    })?;
+    fs::create_dir_all(&data_dir)
+        .inspect_err(|error| error!("couldn't create data directory {}", error))?;
 
     // Create database pool
     // let pool = crate::RUNTIME
@@ -297,15 +334,15 @@ pub fn run() -> anyhow::Result<()> {
         let bounds = Bounds::centered(None, size(px(1024.0), px(700.0)), cx);
 
         // find_fonts(cx).expect("unable to load fonts");
-        create_theme(cx, SharedString::from("Hybrid Dark"));
+        create_theme(cx, SharedString::from("Alduin"));
         build_models(cx);
         cx.activate(true);
 
         let win_ops = WindowOptions {
-            window_bounds: Some(WindowBounds::Windowed(bounds)),
-            window_background: WindowBackgroundAppearance::Opaque,
-            window_decorations: Some(WindowDecorations::Client),
-            window_min_size: Some(size(px(800.0), px(600.0))),
+            window_bounds: Some(WindowBounds::Windowed(bounds)), // 设置窗口的初始位置和尺寸
+            window_background: WindowBackgroundAppearance::Opaque, //定义窗口的背景样式: Opaque: 不透明，Transparent：透明，Blurred：毛玻璃
+            window_decorations: Some(WindowDecorations::Client), // 控制窗口的“装饰”，即边框、标题栏和标准窗口按钮（关闭、最小化、最大化) Client` 表示**由客户端（也就是你的应用程序）来绘制**这些装饰。这通常用于实现自定义的、非原生外观的标题栏
+            window_min_size: Some(size(px(1400.0), px(800.0))),
             titlebar: Some(TitlebarOptions {
                 title: Some(SharedString::from("Happybird")),
                 appears_transparent: true,
@@ -342,7 +379,7 @@ pub fn run() -> anyhow::Result<()> {
                     show_about,
                     header: Header::new(cx),
                     sidebar: CustomSidebar::new(cx),
-                    watch_list: WatchList::new(cx, window),
+                    info_panel: InfoPanel::new(cx),
                 });
                 Root::new(view, window, cx)
             })

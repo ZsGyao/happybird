@@ -1,6 +1,7 @@
 use gpui::{App, AppContext, Entity, ParentElement, Render, Styled, div, px};
 use gpui_component::{Icon, IconName, button::Button};
-use tracing::info;
+
+use crate::zlog::log_impl::info;
 
 pub struct CustomSettings {}
 
@@ -19,7 +20,7 @@ impl Render for CustomSettings {
         div().justify_center().relative().child(
             Button::new("custom-settings")
                 .child(div().child(Icon::new(IconName::Settings)))
-                .on_click(|_, _, _| info!("Custom Setting click")),
+                .on_click(|_, _, _| info!("CustomSetting Click")),
         )
     }
 }
