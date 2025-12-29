@@ -4,15 +4,16 @@ pub mod db;
 use std::borrow::Cow;
 
 use gpui::AssetSource;
-use sqlx::SqlitePool;
 use url::Url;
 
 use crate::ui::assets::bundled::BundledAssets;
 
+#[allow(dead_code)]
 pub struct HappybirdAssetSource {
     // pool: SqlitePool,
 }
 
+#[allow(dead_code)]
 impl HappybirdAssetSource {
     // pub fn new(pool: SqlitePool) -> Self {
     //     Self { pool }

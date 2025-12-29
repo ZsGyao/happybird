@@ -89,6 +89,7 @@ impl Render for CustomSidebar {
 }
 
 #[derive(IntoElement)]
+#[allow(dead_code)]
 pub struct SidebarSeparator {}
 
 impl RenderOnce for SidebarSeparator {
@@ -101,6 +102,7 @@ impl RenderOnce for SidebarSeparator {
     }
 }
 
+#[allow(dead_code)]
 pub fn sidebar_separator() -> SidebarSeparator {
     SidebarSeparator {}
 }

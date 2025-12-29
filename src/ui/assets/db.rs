@@ -1,10 +1,10 @@
 use std::borrow::Cow;
 
-use anyhow::anyhow;
 use sqlx::SqlitePool;
 use url::Url;
 
-pub fn load(pool: &SqlitePool, url: Url) -> gpui::Result<Option<Cow<'static, [u8]>>> {
+#[allow(dead_code)]
+pub fn load(_pool: &SqlitePool, _url: Url) -> gpui::Result<Option<Cow<'static, [u8]>>> {
     // match url
     //     .host_str()
     //     .ok_or_else(|| anyhow!("missing table name"))?

@@ -38,6 +38,7 @@ pub fn modal() -> Modal {
 
 actions!(modal, [CloseModal]);
 
+#[allow(dead_code)]
 pub fn bind_actions(cx: &mut App) {
     cx.bind_keys([KeyBinding::new("escape", CloseModal, None)]);
 }

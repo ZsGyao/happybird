@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 // Paths to icons from Tabler Icons, for use with icon.rs
 // See assets/icons/LICENSE
 

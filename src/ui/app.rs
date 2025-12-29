@@ -18,9 +18,7 @@ use gpui_component_assets::Assets;
 
 use crate::ui::{
     about::about_dialog,
-    constants::{APP_ROUNDING, APP_SHADOW_SIZE, APP_SIDEBAR_W},
-    custom_avatar::{self, CustomAvatar},
-    custom_settings::{self, CustomSettings},
+    constants::{APP_ROUNDING, APP_SHADOW_SIZE},
     custom_sidebar::CustomSidebar,
     header::Header,
     models::{Models, build_models},
@@ -39,6 +37,7 @@ pub fn get_dirs() -> ProjectDirs {
         .expect("couldn't generate project dirs")
 }
 
+#[allow(dead_code)]
 pub fn find_fonts(cx: &mut App) -> gpui::Result<()> {
     let paths = cx.asset_source().list("!bundled:fonts")?;
     let mut fonts = vec![];
