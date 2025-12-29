@@ -11,16 +11,15 @@ use gpui::{
 
 use gpui_component::{ActiveTheme, Root};
 use gpui_component_assets::Assets;
-use tracing::debug;
 
 use crate::ui::{
     about::about_dialog,
     constants::{APP_ROUNDING, APP_SHADOW_SIZE},
     custom_sidebar::CustomSidebar,
     header::Header,
+    info_panel::InfoPanel,
     models::{Models, build_models},
     theme::create_theme,
-    watch_list::WatchList,
 };
 
 pub fn get_dirs() -> ProjectDirs {
@@ -48,7 +47,6 @@ pub fn find_fonts(cx: &mut App) -> gpui::Result<()> {
     }
 
     let results = cx.text_system().add_fonts(fonts);
-    debug!("loaded fonts: {:?}", cx.text_system().all_font_names());
     results
 }
 
@@ -56,7 +54,7 @@ struct WindowShadow {
     pub show_about: Entity<bool>,
     pub header: Entity<Header>,
     pub sidebar: Entity<CustomSidebar>,
-    pub watch_list: Entity<WatchList>,
+    pub info_panel: Entity<InfoPanel>,
 }
 
 impl Render for WindowShadow {
@@ -204,13 +202,12 @@ impl Render for WindowShadow {
                             .w_full()
                             .child(self.sidebar.clone())
                             .when(*cx.global::<Models>().show_folder.clone().read(cx), |div| {
-                                div.child(self.watch_list.clone())
+                                div.child(self.info_panel.clone())
                             }), //.child(List::new(&state)),
                     )
                     .when(show_about, |this| {
                         this.child(about_dialog(&|_, cx| {
                             let show_about = cx.global::<Models>().show_about.clone();
-                            debug!("Folder show about exit");
                             show_about.write(cx, false);
                         }))
                     }),
@@ -270,13 +267,7 @@ fn resize_edge(
 pub fn run() -> anyhow::Result<()> {
     let dirs = get_dirs();
     let data_dir = dirs.data_dir().to_path_buf();
-    fs::create_dir_all(&data_dir).inspect_err(|error| {
-        tracing::error!(
-            ?error,
-            "couldn't create data directory '{}'",
-            data_dir.display(),
-        )
-    })?;
+    fs::create_dir_all(&data_dir).inspect_err(|error| {})?;
 
     // Create database pool
     // let pool = crate::RUNTIME
@@ -340,7 +331,7 @@ pub fn run() -> anyhow::Result<()> {
                     show_about,
                     header: Header::new(cx),
                     sidebar: CustomSidebar::new(cx),
-                    watch_list: WatchList::new(cx, window),
+                    info_panel: InfoPanel::new(cx),
                 });
                 Root::new(view, window, cx)
             })

@@ -4,7 +4,6 @@ use gpui::{
 use gpui::{Entity, Styled};
 use gpui_component::sidebar::{Sidebar, SidebarGroup, SidebarMenu, SidebarMenuItem};
 use gpui_component::{ActiveTheme, Icon, IconName, Side, StyledExt};
-use tracing::info;
 
 use crate::ui::constants::APP_SIDEBAR_W;
 use crate::ui::custom_avatar::CustomAvatar;
@@ -44,9 +43,7 @@ impl Render for CustomSidebar {
                                 SidebarMenu::new().child(
                                     SidebarMenuItem::new("sidebar_home")
                                         .icon(Icon::new(IconName::LayoutDashboard).size(px(21.0)))
-                                        .on_click(|_, _, _| {
-                                            info!("Sidebar Home click");
-                                        }),
+                                        .on_click(|_, _, _| {}),
                                 ),
                             ),
                         )
@@ -59,11 +56,10 @@ impl Render for CustomSidebar {
                                             let show_folder =
                                                 cx.global::<Models>().show_folder.clone();
                                             show_folder.write(cx, !show_folder.read(cx));
-                                            info!("Folder show {}", show_folder.read(cx));
                                         }),
                                     SidebarMenuItem::new("reserve_item")
                                         .icon(Icon::new(IconName::Bell).size(px(20.0)))
-                                        .on_click(|_, _, _| info!("Reserve Item click")),
+                                        .on_click(|_, _, _| {}),
                                 ]),
                             ),
                         ),

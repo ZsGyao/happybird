@@ -4,6 +4,8 @@ use gpui::{App, Global, Rgba, SharedString, rgb, rgba};
 use gpui_component::{Theme, ThemeRegistry};
 use serde::Deserialize;
 
+use crate::error;
+
 #[derive(Deserialize, Clone)]
 #[serde(default)]
 pub struct UsrTheme {
@@ -174,6 +176,6 @@ pub fn create_theme(cx: &mut App, topic_theme_name: SharedString) {
             Theme::global_mut(cx).apply_config(&theme);
         }
     }) {
-        tracing::error!("Failed to watch themes directory: {}", err);
+        error!("Create theme error");
     }
 }
