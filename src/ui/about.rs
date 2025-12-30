@@ -1,8 +1,8 @@
 use gpui::{
-    FontWeight, InteractiveElement, IntoElement, ParentElement, RenderOnce,
+    Corners, FontWeight, InteractiveElement, IntoElement, ParentElement, RenderOnce,
     StatefulInteractiveElement, Styled, div, img, px,
 };
-use gpui_component::ActiveTheme;
+use gpui_component::{ActiveTheme, StyledExt};
 
 use super::{
     components::modal::{OnExitHandler, modal},
@@ -25,8 +25,9 @@ impl RenderOnce for AboutDialog {
             div()
                 .p(px(20.0))
                 .pb(px(18.0))
-                .flex()
-                .child(img("!bundled:images/logo.png").w(px(66.0)).mr(px(20.0)))
+                .h_flex()
+                .justify_center()
+                .child(img("images/happybird_logo.png").w(px(120.0)).mr(px(20.0)))
                 .child(
                     div()
                         .flex()

@@ -1,5 +1,5 @@
 use gpui::{prelude::FluentBuilder, *};
-use gpui_component::{Icon, IconName};
+use gpui_component::{Icon, IconName, StyledExt};
 
 use crate::ui::{constants::APP_ROUNDING, models::Models, theme::UsrTheme};
 
@@ -64,6 +64,7 @@ impl Render for Header {
                         div()
                             .id("happybird-name")
                             .cursor_pointer()
+                            .h_flex()
                             .on_mouse_down(MouseButton::Left, |_, window, cx| {
                                 window.prevent_default();
                                 cx.stop_propagation();
@@ -72,8 +73,14 @@ impl Render for Header {
                                 let show_about = cx.global::<Models>().show_about.clone();
                                 show_about.write(cx, true);
                             })
+                            .child(
+                                img("images/happybird_logo_sm.png")
+                                    .w(px(26.0))
+                                    .mr(px(6.0))
+                                    .corner_radii(Corners::all(px(8.0))),
+                            )
                             .child("Happybird")
-                            .mr(px(8.0)),
+                            .mr(px(6.0)),
                     )
                 },
             ))

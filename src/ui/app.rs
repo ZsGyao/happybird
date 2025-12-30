@@ -12,6 +12,7 @@ use gpui::{
 use crate::{
     debug,
     ui::{
+        assets::HappybirdAsset,
         constants::{APP_LEFT_PANEL_INIT_W, APP_RIGHT_PANEL_INIT_W, APP_SIDEBAR_W},
         info_panel::InfoPanel,
     },
@@ -26,23 +27,10 @@ use gpui_component_assets::Assets;
 use crate::ui::{
     about::about_dialog,
     constants::{APP_ROUNDING, APP_SHADOW_SIZE},
-    custom_sidebar::CustomSidebar,
     header::Header,
     models::{Models, build_models},
     theme::{UsrTheme, create_theme},
 };
-
-pub fn get_dirs() -> ProjectDirs {
-    let secondary_dirs = directories::ProjectDirs::from("me", "zgy", "happybird")
-        .expect("couldn't generate project dirs (secondary)");
-
-    if secondary_dirs.data_dir().exists() {
-        return secondary_dirs;
-    }
-
-    directories::ProjectDirs::from("org", "zgy", "happybird")
-        .expect("couldn't generate project dirs")
-}
 
 #[allow(dead_code)]
 pub fn find_fonts(cx: &mut App) -> gpui::Result<()> {
@@ -64,7 +52,6 @@ pub fn find_fonts(cx: &mut App) -> gpui::Result<()> {
 struct WindowShadow {
     pub show_about: Entity<bool>,
     pub header: Entity<Header>,
-    pub sidebar: Entity<CustomSidebar>,
     pub info_panel: Entity<InfoPanel>,
 }
 
@@ -200,8 +187,7 @@ impl Render for WindowShadow {
                     })
                     .on_mouse_move(|_e, _, cx| {
                         cx.stop_propagation();
-                    })
-                    .on_drop(|ev: &ExternalPaths, _, cx| {}) // 当有文件被拖到窗口上的行为，现在为空
+                    }) // 当有文件被拖到窗口上的行为，现在为空
                     .overflow_hidden()
                     .bg(cx.theme().colors.background)
                     .size_full()
@@ -211,46 +197,41 @@ impl Render for WindowShadow {
                     .max_h_full()
                     .child(self.header.clone()) // 从此，窗口被绘制完成
                     .child(
-                        div()
-                            .flex()
-                            .h_flex()
-                            .h_full()
-                            .child(self.sidebar.clone())
-                            .child(
-                                h_resizable("center-dock")
-                                    .child(
-                                        resizable_panel()
-                                            .size(px(260.0))
-                                            .size_range(px(180.0)..px(540.0))
-                                            .child(
-                                                v_resizable("info-panel").child(
-                                                    resizable_panel()
-                                                        .size(px(200.0))
-                                                        .child(self.info_panel.clone()),
-                                                ),
+                        div().flex().h_flex().h_full().child(
+                            h_resizable("center-dock")
+                                .child(
+                                    resizable_panel()
+                                        .size(px(260.0))
+                                        .size_range(px(180.0)..px(540.0))
+                                        .child(
+                                            v_resizable("info-panel").child(
+                                                resizable_panel()
+                                                    .size(px(200.0))
+                                                    .child(self.info_panel.clone()),
                                             ),
-                                    )
-                                    .child(
-                                        resizable_panel().size(center_init_size).child(
-                                            v_resizable("info-show-panel")
-                                                .child(resizable_panel().child("Info Show Panel"))
-                                                .child(
-                                                    resizable_panel()
-                                                        .size(px(150.0))
-                                                        .size_range(px(80.0)..px(210.0))
-                                                        .child("Bottom Terminal"),
-                                                ),
                                         ),
-                                    )
-                                    .child(
-                                        v_resizable("right-panel").child(
-                                            resizable_panel()
-                                                .size(px(100.0))
-                                                .size_range(px(80.0)..px(180.0))
-                                                .child("Right panel"),
-                                        ),
+                                )
+                                .child(
+                                    resizable_panel().size(center_init_size).child(
+                                        v_resizable("info-show-panel")
+                                            .child(resizable_panel().child("Info Show Panel"))
+                                            .child(
+                                                resizable_panel()
+                                                    .size(px(150.0))
+                                                    .size_range(px(80.0)..px(210.0))
+                                                    .child("Bottom Terminal"),
+                                            ),
                                     ),
-                            ),
+                                )
+                                .child(
+                                    v_resizable("right-panel").child(
+                                        resizable_panel()
+                                            .size(px(100.0))
+                                            .size_range(px(80.0)..px(180.0))
+                                            .child("Right panel"),
+                                    ),
+                                ),
+                        ),
                     )
                     .when(show_about, |this| {
                         this.child(about_dialog(&|_, cx| {
@@ -313,11 +294,6 @@ fn resize_edge(
 }
 
 pub fn run() -> anyhow::Result<()> {
-    let dirs = get_dirs();
-    let data_dir = dirs.data_dir().to_path_buf();
-    fs::create_dir_all(&data_dir)
-        .inspect_err(|error| error!("couldn't create data directory {}", error))?;
-
     // Create database pool
     // let pool = crate::RUNTIME
     //     .block_on(create_pool(data_dir.join("library.db")))
@@ -325,13 +301,13 @@ pub fn run() -> anyhow::Result<()> {
     //         tracing::error!(?error, "fatal: unable to create database pool");
     //     })?;
 
-    // let app = Application::new().with_assets(HappybirdAssetSource::new());
-    let app = Application::new().with_assets(Assets);
+    let app = Application::new().with_assets(HappybirdAsset);
+    // let app = Application::new().with_assets(Assets);
 
     app.run(move |cx| {
         // This must be called before using any GPUI Component features.
         gpui_component::init(cx);
-
+        HappybirdAsset.load_fonts(cx).unwrap();
         let bounds = Bounds::centered(None, size(px(1024.0), px(700.0)), cx);
 
         // find_fonts(cx).expect("unable to load fonts");
@@ -366,12 +342,7 @@ pub fn run() -> anyhow::Result<()> {
                 .detach();
 
                 let show_about = cx.global::<Models>().show_about.clone();
-                let show_folder = cx.global::<Models>().show_folder.clone();
                 cx.observe(&show_about, |_, _, cx| {
-                    cx.notify();
-                })
-                .detach();
-                cx.observe(&show_folder, |_, _, cx| {
                     cx.notify();
                 })
                 .detach();
@@ -379,7 +350,6 @@ pub fn run() -> anyhow::Result<()> {
                 let view = cx.new(|cx| WindowShadow {
                     show_about,
                     header: Header::new(cx),
-                    sidebar: CustomSidebar::new(cx),
                     info_panel: InfoPanel::new(cx),
                 });
                 Root::new(view, window, cx)
