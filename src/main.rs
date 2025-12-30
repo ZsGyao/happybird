@@ -4,8 +4,6 @@ mod zlog;
 
 use std::sync::LazyLock;
 
-use crate::zlog::filter::LEVEL_ENABLED_MAX_DEFAULT;
-
 #[allow(dead_code)]
 static RUNTIME: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
     tokio::runtime::Builder::new_multi_thread()
@@ -16,10 +14,8 @@ static RUNTIME: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
 });
 
 fn main() -> anyhow::Result<()> {
-    // Init log
     zlog::init();
-    zlog::init_output_stdout();
+    zlog::sink::init_output_stdout();
 
-    // App run
     crate::ui::app::run()
 }

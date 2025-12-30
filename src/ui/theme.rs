@@ -176,6 +176,6 @@ pub fn create_theme(cx: &mut App, topic_theme_name: SharedString) {
             Theme::global_mut(cx).apply_config(&theme);
         }
     }) {
-        error!("Create theme error");
+        error!("Failed to watch themes directory: {}", err);
     }
 }

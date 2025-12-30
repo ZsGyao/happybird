@@ -13,10 +13,10 @@ use crate::zlog::{
 static ENV_FILTER: OnceLock<env_config::EnvFilter> = OnceLock::new();
 static SCOPE_MAP: RwLock<ScopeMap> = RwLock::new(ScopeMap::empty());
 
-pub const LEVEL_ENABLED_MAX_DEFAULT: log::LevelFilter = log::LevelFilter::Info;
-// pub const LEVEL_ENABLED_MAX_DEFAULT: log::LevelFilter = log::LevelFilter::Trace;
+// pub const LEVEL_ENABLED_MAX_DEFAULT: log::LevelFilter = log::LevelFilter::Info;
+pub const LEVEL_ENABLED_MAX_DEFAULT: log::LevelFilter = log::LevelFilter::Trace;
 /// The maximum log level of verbosity that is enabled by default.
-/// All messages more verbose than this level will be discardSed
+/// All messages more verbose than this level will be discarded
 /// by default unless specially configured.
 ///
 /// This is used instead of the `log::max_level` as we need to tell the `log`
@@ -408,6 +408,8 @@ impl ScopeMap {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use log::LevelFilter;
 
     use crate::zlog::{Scope, private::scope_new};

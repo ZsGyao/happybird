@@ -4,7 +4,7 @@ pub mod sink;
 
 pub use log as log_impl;
 
-pub use sink::{flush, init_output_file, init_output_stderr, init_output_stdout};
+use crate::zlog::sink::init_output_stdout;
 
 pub const SCOPE_DEPTH_MAX: usize = 4;
 
@@ -30,7 +30,7 @@ pub fn init_test() {
 }
 
 fn get_env_config() -> Option<String> {
-    std::env::var("HAPPYBIRD_LOG")
+    std::env::var("ZED_LOG")
         .or_else(|_| std::env::var("RUST_LOG"))
         .ok()
         .or_else(|| {
@@ -283,8 +283,8 @@ pub mod private {
 pub type Scope = [&'static str; SCOPE_DEPTH_MAX];
 pub type ScopeRef<'a> = [&'a str; SCOPE_DEPTH_MAX];
 pub type ScopeAlloc = [String; SCOPE_DEPTH_MAX];
-const SCOPE_STRING_SEP_STR: &str = ".";
-const SCOPE_STRING_SEP_CHAR: char = '.';
+pub const SCOPE_STRING_SEP_STR: &str = ".";
+pub const SCOPE_STRING_SEP_CHAR: char = '.';
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Logger {
