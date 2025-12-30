@@ -2582,6 +2582,7 @@ dependencies = [
  "rust-embed",
  "serde",
  "serde_json",
+ "smallvec",
  "sqlx",
  "tempfile",
  "tokio",

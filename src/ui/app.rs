@@ -9,7 +9,14 @@ use gpui::{
     canvas, div, point, prelude::FluentBuilder, px, rgba, size, transparent_black,
 };
 
-use crate::{debug, ui::info_panel::InfoPanel, zlog::log_impl::error};
+use crate::{
+    debug,
+    ui::{
+        constants::{APP_LEFT_PANEL_INIT_W, APP_RIGHT_PANEL_INIT_W, APP_SIDEBAR_W},
+        info_panel::InfoPanel,
+    },
+    zlog::log_impl::error,
+};
 use gpui_component::{
     ActiveTheme, Root, StyledExt,
     resizable::{ResizablePanel, h_resizable, resizable_panel, v_resizable},
@@ -72,7 +79,10 @@ impl Render for WindowShadow {
         let show_about = *self.show_about.clone().read(cx);
 
         // cala size
-        // let state = FileBrowserDelegate::new(cx, window);
+        let center_init_size = window.bounds().size.width
+            - APP_SIDEBAR_W
+            - APP_LEFT_PANEL_INIT_W
+            - APP_RIGHT_PANEL_INIT_W;
 
         let mut element = div()
             .id("window-backdrop")
@@ -201,14 +211,6 @@ impl Render for WindowShadow {
                     .max_h_full()
                     .child(self.header.clone()) // 从此，窗口被绘制完成
                     .child(
-                        // div()
-                        //     .flex()
-                        //     .h_full()
-                        //     .w_full()
-                        //     .child(self.sidebar.clone())
-                        //     .when(*cx.global::<Models>().show_folder.clone().read(cx), |div| {
-                        //         div.child(self.info_panel.clone())
-                        //     }), //.child(List::new(&state)),
                         div()
                             .flex()
                             .h_flex()
@@ -224,12 +226,12 @@ impl Render for WindowShadow {
                                                 v_resizable("info-panel").child(
                                                     resizable_panel()
                                                         .size(px(200.0))
-                                                        .child("File Explorer"),
+                                                        .child(self.info_panel.clone()),
                                                 ),
                                             ),
                                     )
                                     .child(
-                                        resizable_panel().child(
+                                        resizable_panel().size(center_init_size).child(
                                             v_resizable("info-show-panel")
                                                 .child(resizable_panel().child("Info Show Panel"))
                                                 .child(

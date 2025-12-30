@@ -20,6 +20,7 @@ tokio = { version = "1", features = ["rt-multi-thread"] }
 url = "2.5"
 urlencoding = "2"
 log = { version = "0.4.16", features = ["kv_unstable_serde", "serde"] }
+smallvec = { version = "1.6", features = ["union", "const_new"] }
 
 [dev-dependencies]
 tempfile = "3.20.0"
