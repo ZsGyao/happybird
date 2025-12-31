@@ -13,23 +13,22 @@ use crate::{
     debug,
     ui::{
         assets::HappybirdAsset,
-        constants::{APP_LEFT_PANEL_INIT_W, APP_RIGHT_PANEL_INIT_W, APP_SIDEBAR_W},
+        constants::{APP_LEFT_PANEL_INIT_W, APP_RIGHT_PANEL_INIT_W},
         info_panel::InfoPanel,
+        search::SearchPanel,
     },
-    zlog::log_impl::error,
 };
 use gpui_component::{
     ActiveTheme, Root, StyledExt,
-    resizable::{ResizablePanel, h_resizable, resizable_panel, v_resizable},
+    resizable::{h_resizable, resizable_panel, v_resizable},
 };
-use gpui_component_assets::Assets;
 
 use crate::ui::{
     about::about_dialog,
     constants::{APP_ROUNDING, APP_SHADOW_SIZE},
     header::Header,
     models::{Models, build_models},
-    theme::{UsrTheme, create_theme},
+    theme::create_theme,
 };
 
 #[allow(dead_code)]
@@ -49,7 +48,7 @@ pub fn find_fonts(cx: &mut App) -> gpui::Result<()> {
     results
 }
 
-struct WindowShadow {
+pub struct WindowShadow {
     pub show_about: Entity<bool>,
     pub header: Entity<Header>,
     pub info_panel: Entity<InfoPanel>,
@@ -206,14 +205,6 @@ impl Render for WindowShadow {
                                                 .w_full()
                                                 .v_flex()
                                                 .child(
-                                                    div()
-                                                        .w_full()
-                                                        .p_1()
-                                                        .border_b_1()
-                                                        .border_color(cx.theme().colors.border)
-                                                        .child("Search here"),
-                                                )
-                                                .child(
                                                     v_resizable("info-panel")
                                                         .child(
                                                             resizable_panel()
@@ -355,10 +346,10 @@ pub fn run() -> anyhow::Result<()> {
     app.run(move |cx| {
         // This must be called before using any GPUI Component features.
         gpui_component::init(cx);
-        HappybirdAsset.load_fonts(cx).unwrap();
+        // HappybirdAsset.load_fonts(cx).unwrap();
         let bounds = Bounds::centered(None, size(px(1024.0), px(700.0)), cx);
 
-        // find_fonts(cx).expect("unable to load fonts");
+        find_fonts(cx).expect("unable to load fonts");
         create_theme(cx, SharedString::from("Alduin"));
         build_models(cx);
         cx.activate(true);
@@ -398,7 +389,7 @@ pub fn run() -> anyhow::Result<()> {
                 let view = cx.new(|cx| WindowShadow {
                     show_about,
                     header: Header::new(cx),
-                    info_panel: InfoPanel::new(cx),
+                    info_panel: InfoPanel::new(window, cx),
                 });
                 Root::new(view, window, cx)
             })

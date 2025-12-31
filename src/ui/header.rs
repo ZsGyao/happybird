@@ -79,6 +79,7 @@ impl Render for Header {
                                     .mr(px(6.0))
                                     .corner_radii(Corners::all(px(8.0))),
                             )
+                            .font_bold()
                             .child("Happybird")
                             .mr(px(6.0)),
                     )
