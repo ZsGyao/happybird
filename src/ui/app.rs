@@ -66,10 +66,8 @@ impl Render for WindowShadow {
         let show_about = *self.show_about.clone().read(cx);
 
         // cala size
-        let center_init_size = window.bounds().size.width
-            - APP_SIDEBAR_W
-            - APP_LEFT_PANEL_INIT_W
-            - APP_RIGHT_PANEL_INIT_W;
+        let center_init_size =
+            window.bounds().size.width - APP_LEFT_PANEL_INIT_W - APP_RIGHT_PANEL_INIT_W;
 
         let mut element = div()
             .id("window-backdrop")
@@ -202,34 +200,84 @@ impl Render for WindowShadow {
                                 .child(
                                     resizable_panel()
                                         .size(px(260.0))
-                                        .size_range(px(180.0)..px(540.0))
+                                        .size_range(px(180.0)..Pixels::MAX)
                                         .child(
-                                            v_resizable("info-panel").child(
-                                                resizable_panel()
-                                                    .size(px(200.0))
-                                                    .child(self.info_panel.clone()),
-                                            ),
+                                            div()
+                                                .w_full()
+                                                .v_flex()
+                                                .child(
+                                                    div()
+                                                        .w_full()
+                                                        .p_1()
+                                                        .border_b_1()
+                                                        .border_color(cx.theme().colors.border)
+                                                        .child("Search here"),
+                                                )
+                                                .child(
+                                                    v_resizable("info-panel")
+                                                        .child(
+                                                            resizable_panel()
+                                                                .child(self.info_panel.clone()),
+                                                        )
+                                                        .child(
+                                                            resizable_panel()
+                                                                .size(px(160.0))
+                                                                .size_range(px(100.0)..px(500.0))
+                                                                .child("History Item"),
+                                                        ),
+                                                )
+                                                .child(
+                                                    div()
+                                                        .v_flex()
+                                                        .w_full()
+                                                        .child("Import New Data")
+                                                        .child(
+                                                            div()
+                                                                .h_flex()
+                                                                .justify_around()
+                                                                .child("Export")
+                                                                .child("Config"),
+                                                        ),
+                                                ),
                                         ),
                                 )
                                 .child(
                                     resizable_panel().size(center_init_size).child(
-                                        v_resizable("info-show-panel")
-                                            .child(resizable_panel().child("Info Show Panel"))
+                                        div()
+                                            .w_full()
+                                            .v_flex()
                                             .child(
-                                                resizable_panel()
-                                                    .size(px(150.0))
-                                                    .size_range(px(80.0)..px(210.0))
-                                                    .child("Bottom Terminal"),
+                                                div()
+                                                    .h(px(40.0))
+                                                    .border_b_1()
+                                                    .border_color(cx.theme().colors.border)
+                                                    .child("Edit button"),
+                                            )
+                                            .child(
+                                                // v_resizable("info-show-panel").child(
+                                                //     resizable_panel().child("Info Show Panel"),
+                                                // ),
+                                                "Info Show Panel",
                                             ),
                                     ),
                                 )
                                 .child(
-                                    v_resizable("right-panel").child(
-                                        resizable_panel()
-                                            .size(px(100.0))
-                                            .size_range(px(80.0)..px(180.0))
-                                            .child("Right panel"),
-                                    ),
+                                    resizable_panel()
+                                        .size(APP_RIGHT_PANEL_INIT_W)
+                                        .size_range(px(80.0)..Pixels::MAX)
+                                        .child(
+                                            div()
+                                                .w_full()
+                                                .v_flex()
+                                                .child(
+                                                    div()
+                                                        .h(px(40.0))
+                                                        .border_t_1()
+                                                        .border_color(cx.theme().colors.border)
+                                                        .child("PROPERTY AUDIT"),
+                                                )
+                                                .child("ITEM VIEW"),
+                                        ),
                                 ),
                         ),
                     )
