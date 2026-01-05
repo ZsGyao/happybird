@@ -200,37 +200,7 @@ impl Render for WindowShadow {
                                     resizable_panel()
                                         .size(px(260.0))
                                         .size_range(px(180.0)..Pixels::MAX)
-                                        .child(
-                                            div()
-                                                .w_full()
-                                                .v_flex()
-                                                .child(
-                                                    v_resizable("info-panel")
-                                                        .child(
-                                                            resizable_panel()
-                                                                .child(self.info_panel.clone()),
-                                                        )
-                                                        .child(
-                                                            resizable_panel()
-                                                                .size(px(160.0))
-                                                                .size_range(px(100.0)..px(500.0))
-                                                                .child("History Item"),
-                                                        ),
-                                                )
-                                                .child(
-                                                    div()
-                                                        .v_flex()
-                                                        .w_full()
-                                                        .child("Import New Data")
-                                                        .child(
-                                                            div()
-                                                                .h_flex()
-                                                                .justify_around()
-                                                                .child("Export")
-                                                                .child("Config"),
-                                                        ),
-                                                ),
-                                        ),
+                                        .child(self.info_panel.clone()),
                                 )
                                 .child(
                                     resizable_panel().size(center_init_size).child(

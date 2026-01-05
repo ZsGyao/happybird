@@ -2579,6 +2579,7 @@ dependencies = [
  "gpui-component-assets",
  "log",
  "notify 8.2.0",
+ "rand 0.9.2",
  "rust-embed",
  "serde",
  "serde_json",
