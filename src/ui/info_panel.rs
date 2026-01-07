@@ -14,25 +14,32 @@ use smallvec::SmallVec;
 
 use crate::ui::{
     indent_guides::{IndentGuideColors, RenderedIndentGuide, indent_guides},
+    models::{GlobalAppState, Models},
     search::SearchPanel,
 };
 
+// --- 1. ViewModel: 专门用于 UI 渲染的树节点 ---
 #[derive(Clone, Debug)]
-pub struct FileEntry {
-    pub id: usize,
-    pub name: String,
-    pub depth: usize,
-    pub is_dir: bool,
-    pub is_selected: bool,
+struct TreeItem {
+    id: String,              // 唯一ID (Root用 "root", Subject用数字转字符串)
+    text: String,            // 显示文本
+    depth: usize,            // 缩进深度
+    is_folder: bool,         // 是否是文件夹
+    is_open: bool,           // 文件夹是否展开
+    subject_id: Option<i32>, // 关联的真实数据 ID
 }
 
 pub struct InfoPanel {
-    entries: Vec<FileEntry>,
+    // ---- state------
+    tree_items: Vec<TreeItem>,
+    import_history: Vec<Entity<HistoryImportItem>>,
+    // ui状态
     scroll_handle: UniformListScrollHandle,
     focus_handle: FocusHandle,
     selected_idx: Option<usize>,
+    root_is_open: bool,
+    // ---- sub components
     search: Entity<SearchPanel>,
-    import_history: Vec<Entity<HistoryImportItem>>,
 }
 
 #[derive(Clone)]
@@ -167,151 +174,99 @@ impl Focusable for InfoPanel {
 
 impl InfoPanel {
     pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
-        // 生成测试数据
-        let entries = Self::generate_dummy_data();
+        cx.new(|cx| {
+            let focus_handle = cx.focus_handle();
+            let search = SearchPanel::new(window, cx);
 
-        cx.new(|cx| InfoPanel {
-            entries,
-            scroll_handle: UniformListScrollHandle::new(),
-            focus_handle: cx.focus_handle(),
-            selected_idx: None,
-            search: SearchPanel::new(window, cx),
-            import_history: HistoryImportItem::generate_dummy_data(cx),
+            let mut panel = InfoPanel {
+                tree_items: vec![],
+                scroll_handle: UniformListScrollHandle::new(),
+                focus_handle,
+                selected_idx: None,
+                root_is_open: true, // 默认展开根目录
+                search,
+                import_history: HistoryImportItem::generate_dummy_data(cx),
+            };
+
+            // --- 2. 关键：订阅全局数据变化 ---
+            // 获取全局 Model 的句柄
+            let global_model = cx.global::<GlobalAppState>().0.clone();
+
+            // 立即构建一次初始状态
+            panel.rebuild_tree(global_model.read(cx));
+
+            // 监听：当 fetch_data 完成时，这里会被触发
+            cx.observe(&global_model, |this: &mut Self, model, cx| {
+                this.rebuild_tree(model.read(cx));
+                cx.notify();
+            })
+            .detach();
+
+            panel
         })
     }
 
-    // 生成一些看起来像树结构的扁平数据
-    fn generate_dummy_data() -> Vec<FileEntry> {
-        vec![
-            FileEntry {
-                id: 1,
-                name: "src".into(),
-                depth: 0,
-                is_dir: true,
-                is_selected: false,
-            },
-            FileEntry {
-                id: 2,
-                name: "components".into(),
-                depth: 1,
-                is_dir: true,
-                is_selected: false,
-            },
-            FileEntry {
-                id: 3,
-                name: "button.rs".into(),
-                depth: 2,
-                is_dir: false,
-                is_selected: false,
-            },
-            FileEntry {
-                id: 4,
-                name: "list.rs".into(),
-                depth: 2,
-                is_dir: false,
-                is_selected: false,
-            },
-            FileEntry {
-                id: 5,
-                name: "panel.rs".into(),
-                depth: 2,
-                is_dir: false,
-                is_selected: false,
-            },
-            FileEntry {
-                id: 6,
-                name: "utils".into(),
-                depth: 1,
-                is_dir: true,
-                is_selected: false,
-            },
-            FileEntry {
-                id: 7,
-                name: "format.rs".into(),
-                depth: 2,
-                is_dir: false,
-                is_selected: false,
-            },
-            FileEntry {
-                id: 8,
-                name: "lib.rs".into(),
-                depth: 1,
-                is_dir: false,
-                is_selected: false,
-            },
-            FileEntry {
-                id: 9,
-                name: "main.rs".into(),
-                depth: 1,
-                is_dir: false,
-                is_selected: false,
-            },
-            FileEntry {
-                id: 10,
-                name: "Cargo.toml".into(),
-                depth: 0,
-                is_dir: false,
-                is_selected: false,
-            },
-            FileEntry {
-                id: 11,
-                name: "README.md".into(),
-                depth: 0,
-                is_dir: false,
-                is_selected: false,
-            },
-            FileEntry {
-                id: 12,
-                name: "target".into(),
-                depth: 0,
-                is_dir: true,
-                is_selected: false,
-            },
-            FileEntry {
-                id: 13,
-                name: "debug".into(),
-                depth: 1,
-                is_dir: true,
-                is_selected: false,
-            },
-            FileEntry {
-                id: 14,
-                name: "deps".into(),
-                depth: 2,
-                is_dir: true,
-                is_selected: false,
-            },
-            FileEntry {
-                id: 15,
-                name: "lib-123.rlib".into(),
-                depth: 3,
-                is_dir: false,
-                is_selected: false,
-            },
-        ]
-    }
+    // --- 3. 核心逻辑：将扁平的 Subject 转换为树状 TreeItem ---
+    fn rebuild_tree(&mut self, model: &Models) {
+        self.tree_items.clear();
 
-    fn select_item(&mut self, idx: usize, cx: &mut Context<Self>) {
-        self.selected_idx = Some(idx);
-        for (i, entry) in self.entries.iter_mut().enumerate() {
-            entry.is_selected = i == idx;
+        // A. 添加虚拟根目录
+        self.tree_items.push(TreeItem {
+            id: "root".to_string(),
+            text: format!("📦 All Imports ({})", model.subjects.len()),
+            depth: 0,
+            is_folder: true,
+            is_open: self.root_is_open,
+            subject_id: None,
+        });
+
+        // B. 如果根目录是展开的，则添加所有子项
+        if self.root_is_open {
+            for sub in &model.subjects {
+                self.tree_items.push(TreeItem {
+                    id: sub.id.to_string(),
+                    text: sub.name.clone(),
+                    depth: 1, // 子项深度为 1
+                    is_folder: false,
+                    is_open: false,
+                    subject_id: Some(sub.id),
+                });
+            }
         }
-        cx.notify();
     }
-}
 
-impl Render for FileEntry {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        div()
-            .text_center()
-            .child(format!("{} -- {}", self.id, self.name))
+    // 切换文件夹展开/折叠
+    fn toggle_folder(&mut self, ix: usize, cx: &mut Context<Self>) {
+        if let Some(item) = self.tree_items.get(ix) {
+            if item.id == "root" {
+                self.root_is_open = !self.root_is_open;
+                // 状态变了，重新计算树
+                let store = cx.global::<GlobalAppState>().0.read(cx);
+                self.rebuild_tree(store);
+                cx.notify();
+            }
+        }
+    }
+
+    // 选中列表项
+    fn select_item(&mut self, ix: usize, cx: &mut Context<Self>) {
+        self.selected_idx = Some(ix);
+        // 这里可以添加逻辑：比如点击 Item 后在右侧显示详情
+        cx.notify();
     }
 }
 
 impl Render for InfoPanel {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let entries = self.entries.clone();
-        let item_count = entries.len();
+        let tree_items = self.tree_items.clone();
+        let item_count = tree_items.len();
+        let store = cx.global::<GlobalAppState>().0.read(cx);
+
+        // --- 【配置中心】确保所有计算都基于这两个值 ---
+        const INDENT_SIZE: Pixels = px(20.0);
+        const ICON_SIZE: Pixels = px(20.0); // 图标容器宽度，通常等于缩进宽度
+        // 线条偏移量 = 缩进宽度的一半 (让线穿过图标中心)
+        const GUIDE_OFFSET: Pixels = px(10.0);
 
         div()
             .v_flex() // Correct root element
@@ -333,28 +288,76 @@ impl Render for InfoPanel {
                                 uniform_list("entries", item_count, move |range, _, cx| {
                                     range
                                         .map(|ix| {
-                                            let item = &entries[ix];
+                                            // 防止越界（虽然 uniform_list 应该保证安全）
+                                            if ix >= tree_items.len() {
+                                                return div().into_any_element();
+                                            }
+
+                                            let item = &tree_items[ix];
+                                            // let is_selected = this.selected_idx == Some(ix);
+
                                             div()
                                                 .h(px(24.0))
                                                 .flex()
                                                 .items_center()
-                                                .pl(px(20.0) * item.depth as f32)
-                                                .bg(if item.is_selected {
-                                                    cx.theme().colors.selection
-                                                } else {
-                                                    cx.theme().colors.list
-                                                })
-                                                .child(format!(
-                                                    "{} {}",
-                                                    if item.is_dir { "📁" } else { "📄" },
-                                                    item.name
-                                                ))
+                                                // 左侧内边距 = 深度 * 统一的缩进尺寸 + 一个小的基础偏移(让图标不贴边)
+                                                .pl(INDENT_SIZE * item.depth as f32)
+                                                .pr(px(8.0))
+                                                .cursor_pointer()
+                                                .bg(cx.theme().colors.list)
+                                                .hover(|s| s.bg(cx.theme().colors.list_hover))
+                                                // .on_click(cx.listener(move |this, _, cx| {
+                                                //     this.selected_idx = Some(ix);
+                                                //     cx.notify();
+                                                // }))
+                                                .child(
+                                                    div()
+                                                        .flex()
+                                                        //.gap_2()
+                                                        .items_center()
+                                                        // 图标
+                                                        .child(
+                                                            div()
+                                                                .w(INDENT_SIZE)
+                                                                .flex()
+                                                                .justify_center()
+                                                                .items_center()
+                                                                .child(if item.is_folder {
+                                                                    if item.is_open {
+                                                                        "📂"
+                                                                    } else {
+                                                                        "📁"
+                                                                    }
+                                                                } else {
+                                                                    "📄"
+                                                                }),
+                                                        )
+                                                        // 文本
+                                                        .child(
+                                                            div()
+                                                                .pl(px(4.0)) // 文字离图标稍微远一点点
+                                                                .child(item.text.clone()),
+                                                        )
+                                                        // ID 标记 (仅针对 Subject)
+                                                        .children(item.subject_id.map(|id| {
+                                                            div()
+                                                                .text_xs()
+                                                                .text_color(
+                                                                    cx.theme()
+                                                                        .colors
+                                                                        .info_foreground,
+                                                                )
+                                                                .ml_2()
+                                                                .child(format!("#{}", id))
+                                                        })),
+                                                )
+                                                .into_any_element()
                                         })
                                         .collect::<Vec<_>>()
                                 })
                                 .size_full()
                                 .with_decoration(
-                                    indent_guides(px(14.0), IndentGuideColors::panel(cx))
+                                    indent_guides(INDENT_SIZE, IndentGuideColors::panel(cx))
                                         .with_compute_indents_fn(
                                             cx.entity(),
                                             |this, range, _window, _cx| {
@@ -362,7 +365,7 @@ impl Render for InfoPanel {
                                                     range.end - range.start,
                                                 );
                                                 for i in range {
-                                                    if let Some(entry) = this.entries.get(i) {
+                                                    if let Some(entry) = this.tree_items.get(i) {
                                                         depths.push(entry.depth);
                                                     }
                                                 }
@@ -372,13 +375,13 @@ impl Render for InfoPanel {
                                         .with_render_fn(
                                             cx.entity(),
                                             move |_this, params, _, _cx| {
-                                                const LEFT_OFFSET: Pixels = px(14.);
+                                                // const LEFT_OFFSET: Pixels = px(14.);
                                                 const PADDING_Y: Pixels = px(4.);
                                                 const HITBOX_OVERDRAW: Pixels = px(3.);
 
                                                 let indent_size = params.indent_size;
                                                 let item_height = params.item_height;
-                                                let active_indent_guide_index = None;
+                                                let active_indent_guide_index = None; // 如果你想做高亮当前层级，这里可以传逻辑
 
                                                 params
                                                     .indent_guides
@@ -393,7 +396,7 @@ impl Render for InfoPanel {
                                                         let bounds = Bounds::new(
                                                             point(
                                                                 layout.offset.x * indent_size
-                                                                    + LEFT_OFFSET,
+                                                                    + GUIDE_OFFSET,
                                                                 layout.offset.y * item_height
                                                                     + offset,
                                                             ),
