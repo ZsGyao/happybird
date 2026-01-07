@@ -8,6 +8,7 @@ use crate::{
         assets::HappybirdAsset,
         constants::{APP_LEFT_PANEL_INIT_W, APP_RIGHT_PANEL_INIT_W},
         info_panel::InfoPanel,
+        models::GlobalAppState,
         theme,
     },
 };
@@ -20,7 +21,7 @@ use crate::ui::{
     about::about_dialog,
     constants::{APP_ROUNDING, APP_SHADOW_SIZE},
     header::Header,
-    models::{Models, build_models},
+    models::build_models,
 };
 
 #[allow(dead_code)]
@@ -41,7 +42,6 @@ pub fn find_fonts(cx: &mut App) -> gpui::Result<()> {
 }
 
 pub struct WindowShadow {
-    pub show_about: Entity<bool>,
     pub header: Entity<Header>,
     pub info_panel: Entity<InfoPanel>,
 }
@@ -54,11 +54,11 @@ impl Render for WindowShadow {
         let border_size = px(1.0);
         window.set_client_inset(shadow_size);
 
-        let show_about = *self.show_about.clone().read(cx);
-
         // cala size
         let center_init_size =
             window.bounds().size.width - APP_LEFT_PANEL_INIT_W - APP_RIGHT_PANEL_INIT_W;
+
+        let show_about = cx.global::<GlobalAppState>().0.read(cx).show_about;
 
         let mut element = div()
             .id("window-backdrop")
@@ -236,9 +236,13 @@ impl Render for WindowShadow {
                     )
                     .when(show_about, |this| {
                         this.child(about_dialog(&|_, cx| {
-                            let show_about = cx.global::<Models>().show_about.clone();
+                            cx.global::<GlobalAppState>()
+                                .0
+                                .clone()
+                                .update(cx, |val, _| {
+                                    val.show_about = !val.show_about;
+                                });
                             debug!("Folder show about exit");
-                            show_about.write(cx, false);
                         }))
                     }),
             );
@@ -342,14 +346,13 @@ pub fn run() -> anyhow::Result<()> {
                 })
                 .detach();
 
-                let show_about = cx.global::<Models>().show_about.clone();
-                cx.observe(&show_about, |_, _, cx| {
+                let models_handle = cx.global::<GlobalAppState>().0.clone();
+                cx.observe(&models_handle, |_, _, cx| {
                     cx.notify();
                 })
                 .detach();
 
                 let view = cx.new(|cx| WindowShadow {
-                    show_about,
                     header: Header::new(cx),
                     info_panel: InfoPanel::new(window, cx),
                 });

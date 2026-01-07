@@ -1,7 +1,10 @@
 use gpui::{prelude::FluentBuilder, *};
 use gpui_component::{ActiveTheme, Icon, IconName, StyledExt};
 
-use crate::ui::{constants::APP_ROUNDING, models::Models};
+use crate::ui::{
+    constants::APP_ROUNDING,
+    models::{GlobalAppState, Models},
+};
 
 pub struct Header;
 
@@ -69,8 +72,12 @@ impl Render for Header {
                                 cx.stop_propagation();
                             })
                             .on_click(|_, _, cx| {
-                                let show_about = cx.global::<Models>().show_about.clone();
-                                show_about.write(cx, true);
+                                cx.global::<GlobalAppState>()
+                                    .0
+                                    .clone()
+                                    .update(cx, |val, _| {
+                                        val.show_about = !val.show_about;
+                                    });
                             })
                             .child(
                                 img("images/happybird_logo_sm.png")
