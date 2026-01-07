@@ -37,6 +37,7 @@ impl AssetSource for HappybirdAsset {
     }
 }
 
+#[allow(unused)]
 impl HappybirdAsset {
     /// Populate the [`TextSystem`] of the given [`AppContext`] with all `.ttf` fonts in the `fonts` directory.
     pub fn load_fonts(&self, cx: &App) -> anyhow::Result<()> {

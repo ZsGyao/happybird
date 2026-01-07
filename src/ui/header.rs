@@ -1,7 +1,7 @@
 use gpui::{prelude::FluentBuilder, *};
-use gpui_component::{Icon, IconName, StyledExt};
+use gpui_component::{ActiveTheme, Icon, IconName, StyledExt};
 
-use crate::ui::{constants::APP_ROUNDING, models::Models, theme::UsrTheme};
+use crate::ui::{constants::APP_ROUNDING, models::Models};
 
 pub struct Header;
 
@@ -18,7 +18,6 @@ impl Render for Header {
         cx: &mut gpui::Context<Self>,
     ) -> impl gpui::IntoElement {
         let decorations = window.window_decorations();
-        let theme = cx.global::<UsrTheme>();
 
         div()
             .flex()
@@ -26,11 +25,11 @@ impl Render for Header {
             .text_sm()
             .min_h(px(37.0))
             .max_h(px(37.0))
-            .bg(theme.background_secondary)
+            .bg(cx.theme().colors.secondary)
             .text_sm()
             .border_b_1()
             .id("titlebar")
-            .border_color(theme.border_color)
+            .border_color(cx.theme().colors.border)
             .window_control_area(WindowControlArea::Drag)
             .when(cfg!(not(target_os = "windows")), |this| {
                 this.on_mouse_down(MouseButton::Left, move |ev, window, _| {
@@ -107,21 +106,11 @@ pub enum WindowButton {
 
 impl RenderOnce for WindowButton {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
-        let theme = cx.global::<UsrTheme>();
-
-        let (bg, hover, active) = if self == WindowButton::Close {
-            (
-                theme.close_button,
-                theme.close_button_hover,
-                theme.close_button_active,
-            )
-        } else {
-            (
-                theme.window_button,
-                theme.window_button_hover,
-                theme.window_button_active,
-            )
-        };
+        let (bg, hover, active) = (
+            cx.theme().colors.title_bar,
+            cx.theme().colors.primary_hover,
+            cx.theme().colors.primary_active,
+        );
 
         div()
             .flex()

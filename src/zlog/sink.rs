@@ -48,10 +48,12 @@ pub fn init_output_stdout() {
     ENABLED_SINKS_STDOUT.store(true, Ordering::Release);
 }
 
+#[allow(unused)]
 pub fn init_output_stderr() {
     ENABLED_SINKS_STDERR.store(true, Ordering::Release);
 }
 
+#[allow(unused)]
 pub fn init_output_file(
     path: &'static PathBuf,
     path_rotate: Option<&'static PathBuf>,

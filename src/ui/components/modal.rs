@@ -4,11 +4,9 @@ use gpui::{
     App, Decorations, Div, InteractiveElement, IntoElement, KeyBinding, ParentElement, RenderOnce,
     Stateful, Styled, Window, actions, anchored, deferred, div, point, prelude::FluentBuilder, px,
 };
+use gpui_component::ActiveTheme;
 
-use crate::ui::{
-    constants::{APP_ROUNDING, APP_SHADOW_SIZE},
-    theme::UsrTheme,
-};
+use crate::ui::constants::{APP_ROUNDING, APP_SHADOW_SIZE};
 
 pub type OnExitHandler = dyn Fn(&mut Window, &mut App);
 
@@ -52,7 +50,6 @@ impl ParentElement for Modal {
 impl RenderOnce for Modal {
     fn render(self, window: &mut Window, cx: &mut App) -> impl gpui::IntoElement {
         let decorations = window.window_decorations();
-        let theme = cx.global::<UsrTheme>();
         let mut size = window.viewport_size();
 
         let rounding = APP_ROUNDING;
@@ -81,7 +78,7 @@ impl RenderOnce for Modal {
                 .flex()
                 .w(size.width)
                 .h(size.height)
-                .bg(theme.modal_overlay_bg)
+                .bg(cx.theme().colors.overlay)
                 .id("modal-bg")
                 .map(|div| match decorations {
                     Decorations::Server => div,
@@ -114,9 +111,9 @@ impl RenderOnce for Modal {
                     self.div
                         .occlude()
                         .m_auto()
-                        .border_color(theme.border_color)
+                        .border_color(cx.theme().colors.border)
                         .border_1()
-                        .bg(theme.background_secondary)
+                        .bg(cx.theme().colors.secondary)
                         .rounded(px(8.0))
                         .flex_col()
                         .on_any_mouse_down(|_, _, cx| {

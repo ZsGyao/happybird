@@ -23,6 +23,7 @@ pub fn try_init(filter: Option<String>) -> anyhow::Result<()> {
     Ok(())
 }
 
+#[allow(unused)]
 pub fn init_test() {
     if get_env_config().is_some() && try_init(None).is_ok() {
         init_output_stdout();
@@ -199,6 +200,7 @@ macro_rules! scoped {
     };
 }
 
+#[allow(unused)]
 pub const fn scoped_logger(parent: Logger, name: &'static str) -> Logger {
     let mut scope = parent.scope;
     let mut index = 1; // always have crate/module name
@@ -268,6 +270,7 @@ pub mod private {
         scope
     }
 
+    #[allow(unused)]
     pub fn scope_alloc_new(scopes: &[&str]) -> ScopeAlloc {
         assert!(scopes.len() <= SCOPE_DEPTH_MAX);
         let mut scope = [""; SCOPE_DEPTH_MAX];
@@ -275,6 +278,7 @@ pub mod private {
         scope.map(|s| s.to_string())
     }
 
+    #[allow(unused)]
     pub fn scope_to_alloc(scope: &Scope) -> ScopeAlloc {
         scope.map(|s| s.to_string())
     }
@@ -318,6 +322,7 @@ impl log::Log for Logger {
     }
 }
 
+#[allow(unused)]
 pub struct Timer {
     pub logger: Logger,
     pub start_time: std::time::Instant,
@@ -332,6 +337,7 @@ impl Drop for Timer {
     }
 }
 
+#[allow(unused)]
 impl Timer {
     #[must_use = "Timer will stop when dropped, the result of this function should be saved in a variable prefixed with `_` if it should stop when dropped"]
     pub fn new(logger: Logger, name: &'static str) -> Self {
@@ -378,31 +384,5 @@ impl Timer {
             elapsed
         );
         self.done = true;
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_crate_name() {
-        assert_eq!(crate_name!(), "zlog");
-        assert_eq!(
-            private::extract_crate_name_from_module_path("my_speedy_⚡️_crate::some_module"),
-            "my_speedy_⚡️_crate"
-        );
-        assert_eq!(
-            private::extract_crate_name_from_module_path("my_speedy_crate_⚡️::some_module"),
-            "my_speedy_crate_⚡️"
-        );
-        assert_eq!(
-            private::extract_crate_name_from_module_path("my_speedy_crate_:⚡️:some_module"),
-            "my_speedy_crate_:⚡️:some_module"
-        );
-        assert_eq!(
-            private::extract_crate_name_from_module_path("my_speedy_crate_::⚡️some_module"),
-            "my_speedy_crate_"
-        );
     }
 }

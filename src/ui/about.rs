@@ -1,13 +1,10 @@
 use gpui::{
-    Corners, FontWeight, InteractiveElement, IntoElement, ParentElement, RenderOnce,
+    FontWeight, InteractiveElement, IntoElement, ParentElement, RenderOnce,
     StatefulInteractiveElement, Styled, div, img, px,
 };
 use gpui_component::{ActiveTheme, StyledExt};
 
-use super::{
-    components::modal::{OnExitHandler, modal},
-    theme::UsrTheme,
-};
+use super::components::modal::{OnExitHandler, modal};
 
 const LICENSE_URL: &str = "https://choosealicense.com/licenses/apache-2.0/";
 
@@ -18,7 +15,6 @@ pub struct AboutDialog {
 
 impl RenderOnce for AboutDialog {
     fn render(self, _: &mut gpui::Window, cx: &mut gpui::App) -> impl gpui::IntoElement {
-        let theme = cx.global::<UsrTheme>();
         let version = env!("CARGO_PKG_VERSION");
 
         modal().on_exit(self.on_exit).child(
@@ -64,7 +60,7 @@ impl RenderOnce for AboutDialog {
                                         div()
                                             .font_weight(FontWeight::MEDIUM)
                                             .text_size(px(14.0))
-                                            .text_color(theme.text_about_desc)
+                                            .text_color(cx.theme().chart_5)
                                             .child("Happybird is a gift to shanshan from yaoyao."),
                                     )
                                     .child(div().child(

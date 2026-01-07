@@ -1,13 +1,6 @@
-use std::{fs, sync::Arc};
+use std::sync::Arc;
 
-use directories::ProjectDirs;
-use gpui::{
-    App, AppContext, Application, Bounds, Context, CursorStyle, Decorations, Entity, ExternalPaths,
-    FontFeatures, Hsla, InteractiveElement, IntoElement, MouseButton, ParentElement, Pixels, Point,
-    Render, ResizeEdge, SharedString, Size, Styled, TextStyleRefinement, Tiling, TitlebarOptions,
-    Window, WindowBackgroundAppearance, WindowBounds, WindowDecorations, WindowKind, WindowOptions,
-    canvas, div, point, prelude::FluentBuilder, px, rgba, size, transparent_black,
-};
+use gpui::{prelude::FluentBuilder, *};
 
 use crate::{
     debug,
@@ -15,12 +8,12 @@ use crate::{
         assets::HappybirdAsset,
         constants::{APP_LEFT_PANEL_INIT_W, APP_RIGHT_PANEL_INIT_W},
         info_panel::InfoPanel,
-        search::SearchPanel,
+        theme,
     },
 };
 use gpui_component::{
     ActiveTheme, Root, StyledExt,
-    resizable::{h_resizable, resizable_panel, v_resizable},
+    resizable::{h_resizable, resizable_panel},
 };
 
 use crate::ui::{
@@ -28,7 +21,6 @@ use crate::ui::{
     constants::{APP_ROUNDING, APP_SHADOW_SIZE},
     header::Header,
     models::{Models, build_models},
-    theme::create_theme,
 };
 
 #[allow(dead_code)]
@@ -71,7 +63,7 @@ impl Render for WindowShadow {
         let mut element = div()
             .id("window-backdrop")
             .key_context("app")
-            .bg(transparent_black())
+            .bg(cx.theme().background)
             .flex()
             .map(|div| match decorations {
                 gpui::Decorations::Server => div,
@@ -320,7 +312,7 @@ pub fn run() -> anyhow::Result<()> {
         let bounds = Bounds::centered(None, size(px(1024.0), px(700.0)), cx);
 
         find_fonts(cx).expect("unable to load fonts");
-        create_theme(cx, SharedString::from("Alduin"));
+        theme::init(cx);
         build_models(cx);
         cx.activate(true);
 

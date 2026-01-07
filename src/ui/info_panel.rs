@@ -1,12 +1,12 @@
-use std::ops::Range;
+use chrono::{DateTime, Local};
+use gpui::*;
 
-use chrono::{DateTime, Local, format::Item};
-use gpui::{prelude::FluentBuilder, *};
 use gpui_component::{
-    ActiveTheme, ColorName, Sizable, StyledExt, h_flex,
-    resizable::{h_resizable, resizable_panel, v_resizable},
+    ActiveTheme, StyledExt,
+    button::Button,
+    h_flex,
+    resizable::{resizable_panel, v_resizable},
     scroll::ScrollableElement,
-    tag::Tag,
     v_flex,
 };
 use rand::Rng;
@@ -45,7 +45,7 @@ pub struct HistoryImportItem {
 
 impl HistoryImportItem {
     fn generate_dummy_data(cx: &mut App) -> Vec<Entity<Self>> {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         (0..20)
             .map(|i| {
                 let item = HistoryImportItem {
@@ -61,29 +61,100 @@ impl HistoryImportItem {
 }
 
 impl Render for HistoryImportItem {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // 定义颜色（根据你的图片取色，或者使用 theme）
+        let pink_color = rgb(0xd946ef); // 类似图中的粉紫色
+        let green_color = rgb(0x22c55e); // 绿色
+        let dot_color = if self.import_status {
+            green_color
+        } else {
+            pink_color
+        };
+
+        let line_color = gpui::hsla(0.0, 0.0, 1.0, 0.1);
+        let tag_bg_color = gpui::rgba(0x8b5cf6);
+        let tag_border_color = rgb(0x8b5cf6);
+
         div()
-            .h_flex()
+            .flex()
+            .flex_row() // 整体是水平布局：左边是线/点，右边是文字
             .w_full()
-            .justify_between()
-            .items_center()
-            .p_1()
+            .gap_3() // 点和文字之间的间距
             .child(
+                // === 左侧：时间轴 (点 + 线) ===
                 v_flex()
-                    .gap(px(2.0))
-                    .child(div().font_bold().child(self.import_name.clone()).truncate())
-                    .child(div().font_thin().child(self.import_desc.clone()).truncate()),
+                    .h_full() // 撑满高度，让线能连起来
+                    .items_center() // 居中对齐
+                    .child(
+                        // 1. 圆点
+                        div()
+                            .mt(px(6.0)) // 稍微往下顶一点，为了对齐第一行文字的中心
+                            .size(px(8.0)) // 圆点大小
+                            .rounded_full()
+                            .bg(dot_color),
+                    )
+                    .child(
+                        // 2. 垂直连线
+                        div()
+                            .w(px(1.0)) // 线宽 1px
+                            .flex_1() // 占据剩余高度，形成连接下个item的效果
+                            .mt(px(4.0)) // 点和线之间留一点点缝隙
+                            .bg(line_color), // 淡淡的灰色线条
+                    ),
             )
             .child(
+                // === 右侧：主要内容 ===
                 v_flex()
-                    .gap(px(2.0))
-                    .items_end()
-                    .child(div().child(format!("{}", self.import_time.format("%Y-%m-%d %H:%M"))))
-                    .child(Tag::color(ColorName::Green).small().when_else(
-                        self.import_status,
-                        |this| this.child("success"),
-                        |this| this.child("failure"),
-                    )),
+                    .flex_1()
+                    .pb(px(16.0)) // 每个 Item 底部留白
+                    .gap_1() // 行间距
+                    // 第一行：标题 + 时间
+                    .child(
+                        h_flex()
+                            .justify_between()
+                            .items_start()
+                            .child(
+                                div()
+                                    .font_bold()
+                                    .text_sm()
+                                    .text_color(gpui::white())
+                                    .child(self.import_name.clone()),
+                            )
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .font_bold() // 时间通常用等宽字体好看点
+                                    .text_color(cx.theme().colors.blue)
+                                    .child(self.import_time.format("%D-%H:%M").to_string()),
+                            ),
+                    )
+                    // 第二行：描述
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(cx.theme().colors.blue)
+                            .child(self.import_desc.clone()),
+                    )
+                    // 第三行：Tag (例如 "+ Hobby")
+                    .child(
+                        div()
+                            .flex() // 包裹一层 flex 为了不让 tag 占满整行宽度
+                            .child(
+                                div()
+                                    .mt(px(4.0))
+                                    .px(px(8.0))
+                                    .py(px(2.0))
+                                    .rounded_md()
+                                    .border_1()
+                                    // 这里模拟图中那个紫色的 tag 样式
+                                    .border_color(rgb(0x8b5cf6))
+                                    .bg(rgb(0x8b5cf6))
+                                    .text_xs()
+                                    .font_medium()
+                                    .text_color(rgb(0xc4b5fd))
+                                    .child("+ Hobby"), // 如果这是动态的，请换成 self.tag_name
+                            ),
+                    ),
             )
     }
 }
@@ -230,7 +301,7 @@ impl InfoPanel {
 }
 
 impl Render for FileEntry {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .text_center()
             .child(format!("{} -- {}", self.id, self.name))
@@ -238,7 +309,7 @@ impl Render for FileEntry {
 }
 
 impl Render for InfoPanel {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let entries = self.entries.clone();
         let item_count = entries.len();
 
@@ -286,7 +357,7 @@ impl Render for InfoPanel {
                                     indent_guides(px(14.0), IndentGuideColors::panel(cx))
                                         .with_compute_indents_fn(
                                             cx.entity(),
-                                            |this, range, window, cx| {
+                                            |this, range, _window, _cx| {
                                                 let mut depths = SmallVec::with_capacity(
                                                     range.end - range.start,
                                                 );
@@ -298,57 +369,62 @@ impl Render for InfoPanel {
                                                 depths
                                             },
                                         )
-                                        .with_render_fn(cx.entity(), move |this, params, _, cx| {
-                                            const LEFT_OFFSET: Pixels = px(14.);
-                                            const PADDING_Y: Pixels = px(4.);
-                                            const HITBOX_OVERDRAW: Pixels = px(3.);
+                                        .with_render_fn(
+                                            cx.entity(),
+                                            move |_this, params, _, _cx| {
+                                                const LEFT_OFFSET: Pixels = px(14.);
+                                                const PADDING_Y: Pixels = px(4.);
+                                                const HITBOX_OVERDRAW: Pixels = px(3.);
 
-                                            let indent_size = params.indent_size;
-                                            let item_height = params.item_height;
-                                            let active_indent_guide_index = None;
+                                                let indent_size = params.indent_size;
+                                                let item_height = params.item_height;
+                                                let active_indent_guide_index = None;
 
-                                            params
-                                                .indent_guides
-                                                .into_iter()
-                                                .enumerate()
-                                                .map(|(idx, layout)| {
-                                                    let offset = if layout.continues_offscreen {
-                                                        px(0.)
-                                                    } else {
-                                                        PADDING_Y
-                                                    };
-                                                    let bounds = Bounds::new(
-                                                        point(
-                                                            layout.offset.x * indent_size
-                                                                + LEFT_OFFSET,
-                                                            layout.offset.y * item_height + offset,
-                                                        ),
-                                                        size(
-                                                            px(1.),
-                                                            layout.length * item_height
-                                                                - offset * 2.,
-                                                        ),
-                                                    );
-                                                    RenderedIndentGuide {
-                                                        bounds,
-                                                        layout,
-                                                        is_active: active_indent_guide_index
-                                                            == Some(idx),
-                                                        hitbox: Some(Bounds::new(
+                                                params
+                                                    .indent_guides
+                                                    .into_iter()
+                                                    .enumerate()
+                                                    .map(|(idx, layout)| {
+                                                        let offset = if layout.continues_offscreen {
+                                                            px(0.)
+                                                        } else {
+                                                            PADDING_Y
+                                                        };
+                                                        let bounds = Bounds::new(
                                                             point(
-                                                                bounds.origin.x - HITBOX_OVERDRAW,
-                                                                bounds.origin.y,
+                                                                layout.offset.x * indent_size
+                                                                    + LEFT_OFFSET,
+                                                                layout.offset.y * item_height
+                                                                    + offset,
                                                             ),
                                                             size(
-                                                                bounds.size.width
-                                                                    + HITBOX_OVERDRAW * 2.,
-                                                                bounds.size.height,
+                                                                px(1.),
+                                                                layout.length * item_height
+                                                                    - offset * 2.,
                                                             ),
-                                                        )),
-                                                    }
-                                                })
-                                                .collect()
-                                        }),
+                                                        );
+                                                        RenderedIndentGuide {
+                                                            bounds,
+                                                            layout,
+                                                            is_active: active_indent_guide_index
+                                                                == Some(idx),
+                                                            hitbox: Some(Bounds::new(
+                                                                point(
+                                                                    bounds.origin.x
+                                                                        - HITBOX_OVERDRAW,
+                                                                    bounds.origin.y,
+                                                                ),
+                                                                size(
+                                                                    bounds.size.width
+                                                                        + HITBOX_OVERDRAW * 2.,
+                                                                    bounds.size.height,
+                                                                ),
+                                                            )),
+                                                        }
+                                                    })
+                                                    .collect()
+                                            },
+                                        ),
                                 ),
                             ),
                         )
@@ -359,21 +435,88 @@ impl Render for InfoPanel {
                                 .child(
                                     v_flex()
                                         .size_full()
-                                        .overflow_y_scrollbar()
-                                        .children(self.import_history.clone()),
+                                        .gap_2() // 标题和列表之间的间距
+                                        // 1. 添加缺失的标题栏
+                                        .child(
+                                            div()
+                                                .flex()
+                                                .justify_between()
+                                                .items_center()
+                                                .child(
+                                                    div()
+                                                        .text_xs()
+                                                        .font_bold()
+                                                        .text_color(cx.theme().colors.blue_light) // 灰色文字
+                                                        .child("Import Activity"),
+                                                )
+                                                // 如果需要右侧那个刷新/历史图标，可以在这里加
+                                                .child(
+                                                    div()
+                                                        .child("↺")
+                                                        .text_color(cx.theme().colors.blue_light),
+                                                ),
+                                        )
+                                        // 2. 列表区域
+                                        .child(
+                                            v_flex()
+                                                .flex_1() // 列表占据剩余空间
+                                                .overflow_y_scrollbar()
+                                                .pb(px(16.0)) // <--- 【关键修改】添加底部内边距，防止最后一个 Item 贴底或被切断
+                                                .children(self.import_history.clone()),
+                                        ),
                                 ),
                         ),
                 ),
             )
             .child(
                 // Bottom panel
-                div().h(px(120.0)).w_full().child("Import New Data").child(
-                    div()
-                        .h_flex()
-                        .justify_around()
-                        .child("Export")
-                        .child("Config"),
-                ),
+                div()
+                    // 不需要固定高度 h(px(120.0))，让内容撑开即可，或者用 mt_auto 推到底部
+                    .w_full()
+                    .flex()
+                    .flex_col()
+                    .gap_2() // 上下两行按钮之间的间距
+                    .pt(px(8.0)) // 给上面留一点呼吸空间
+                    .border_t_1() // 可选：顶部加一条分割线
+                    .border_color(cx.theme().colors.blue_light)
+                    // 第一行：Import 大按钮
+                    .child(
+                        Button::new("Import-button")
+                            .w_full() // <--- 关键：填满宽度
+                            .label("Import New Data")
+                            .on_click(|_, _, _| println!("Import New Data")),
+                    )
+                    // 第二行：Export 和 Config 并排
+                    .child(
+                        div()
+                            .flex()
+                            .flex_row()
+                            .w_full()
+                            .h(px(75.0))
+                            .gap_2() // 两个按钮中间的缝隙
+                            // 左侧：Export (包裹在 flex_1 中以占据 50%)
+                            .child(
+                                div()
+                                    .flex_1() // <--- 关键：均分空间
+                                    .child(
+                                        Button::new("Export-button")
+                                            .w_full() // 按钮填满这个 flex_1 容器
+                                            .label("Export")
+                                            .on_click(|_, _, _| println!("Export")),
+                                    ),
+                            )
+                            // 右侧：Config (包裹在 flex_1 中以占据 50%)
+                            .child(
+                                div()
+                                    .flex_1() // <--- 关键：均分空间
+                                    .child(
+                                        Button::new("Config-button")
+                                            .w_full() // 按钮填满这个 flex_1 容器
+                                            .label("Config")
+                                            .on_click(|_, _, _| println!("Config")),
+                                    ),
+                            ),
+                    ),
             )
     }
 }
