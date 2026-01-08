@@ -30,19 +30,14 @@ struct TreeItem {
     /// 节点的唯一标识符（例如："root", "subject-1"）。
     /// 用于在 `expanded_ids` 中追踪展开状态。
     id: String,
-
     /// 显示在界面上的文本。
     text: String,
-
     /// 缩进深度（0 表示根节点，1 表示第一层子节点，以此类推）。
     depth: usize,
-
     /// 标记该节点是否为容器（文件夹）。
     is_folder: bool,
-
     /// 如果是文件夹，当前是否处于展开状态。
     is_open: bool,
-
     /// 关联的后端数据 ID。如果是虚拟节点（如 Root），则为 None。
     subject_id: Option<i32>,
 }
@@ -59,17 +54,14 @@ pub struct InfoPanel {
     // --- 状态数据 ---
     /// 用于渲染的扁平化树节点列表。
     tree_items: Vec<TreeItem>,
-
     /// 记录当前已展开的文件夹 ID 集合。
     expanded_ids: HashSet<String>,
-
     /// 当前选中项在 `tree_items` 中的索引。
     selected_idx: Option<usize>,
 
     // --- UI 句柄 ---
     /// 列表的滚动状态句柄。
     scroll_handle: UniformListScrollHandle,
-
     /// 焦点控制句柄，用于处理键盘导航。
     focus_handle: FocusHandle,
 
@@ -130,7 +122,7 @@ impl InfoPanel {
 
         self.tree_items.push(TreeItem {
             id: root_id.clone(),
-            text: format!("All Subjects ({})", model.subjects.len()), // 显示总数,
+            text: format!("All Subjects ({})", model.total_count), // 显示总数,
             depth: 0,
             is_folder: true,
             is_open: is_root_open,
@@ -212,6 +204,23 @@ impl InfoPanel {
         }
 
         let item = &self.tree_items[ix];
+
+        // --- 逻辑：检测是否需要加载更多 (Infinite Scroll) ---
+        // 如果渲染到了倒数第 10 个元素，触发加载下一页
+        if ix + 10 >= self.tree_items.len() {
+            // 使用 window.defer 避免在 render 循环中直接 update
+            cx.defer(move |cx| {
+                // 访问全局状态
+                let global_model = cx.global::<GlobalAppState>().0.clone();
+                global_model.update(cx, |model, cx| {
+                    if model.has_more && !model.is_loading_more && !model.is_loading {
+                        println!(">>> Triggering fetch_page (next page)");
+                        model.fetch_page(cx, false); // false = 加载下一页
+                    }
+                });
+            });
+        }
+
         let is_selected = self.selected_idx == Some(ix);
         let is_folder = item.is_folder;
         let is_open = item.is_open;

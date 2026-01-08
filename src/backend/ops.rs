@@ -76,6 +76,27 @@ impl DataService {
         Ok(())
     }
 
+    /// 统计符合条件的总数
+    pub fn count_subjects(conn: &Connection, query: Option<&str>) -> Result<usize> {
+        let (where_clause, params) = match query {
+            Some(q) if !q.is_empty() => (
+                "WHERE name LIKE ?1 OR attributes LIKE ?1",
+                vec![format!("%{}%", q)],
+            ),
+            _ => ("", vec![]),
+        };
+
+        let sql = format!("SELECT count(*) FROM subjects {}", where_clause);
+
+        let count: usize = if params.is_empty() {
+            conn.query_row(&sql, [], |r| r.get(0))?
+        } else {
+            conn.query_row(&sql, params![params[0]], |r| r.get(0))?
+        };
+
+        Ok(count)
+    }
+
     /// 搜索与分页查询。
     /// `page`: 从 1 开始。
     pub fn search_subjects(
@@ -98,7 +119,7 @@ impl DataService {
             "SELECT id, name, attributes, created_at, updated_at
                  FROM subjects
                  {}
-                 ORDER BY updated_at DESC, id DESC  -- 【修改点】：增加 id DESC 确保排序稳定
+                 ORDER BY name ASC
                  LIMIT {} OFFSET {}",
             where_clause, page_size, offset
         );
@@ -117,6 +138,7 @@ impl DataService {
         for r in rows {
             results.push(r?);
         }
+        // println!("{:#?}", results);
         Ok(results)
     }
 

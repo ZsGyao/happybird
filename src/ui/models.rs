@@ -13,12 +13,19 @@ pub struct Models {
     db_manager: Arc<DbManager>,
     pub subjects: Vec<Subject>,
     pub dynamic_headers: Vec<String>,
+    pub total_count: usize, // 数据库中的总记录数
+
+    // ----- 分页状态 -------
     pub is_loading: bool,
+    pub is_loading_more: bool, // 防止滚动到底部时重复出发
+    pub has_more: bool,        // 数据库中是否还有更多数据
+    pub page: usize,
+    pub page_size: usize,
+
     pub error_msg: Option<String>,
     pub selected_subject_id: Option<i32>,
     pub search_query: String,
-    pub page: usize,
-    pub page_size: usize,
+
     pub show_about: bool,
 }
 
@@ -31,20 +38,39 @@ impl Models {
             subjects: vec![],
             dynamic_headers: vec![],
             is_loading: false,
+            is_loading_more: false,
+            has_more: true, // 初始假设有数据
+            page: 1,
+            page_size: 50, // 每页加载 50 条
             error_msg: None,
             selected_subject_id: None,
             search_query: String::new(),
-            page: 1,
-            page_size: 50,
             show_about: false,
+            total_count: 0,
         }
     }
 
-    /// 核心动作：从数据库拉取数据更新到内存
-    pub fn fetch_data(&mut self, cx: &mut Context<Self>) {
-        // 1. 设置状态
-        self.is_loading = true;
-        self.error_msg = None;
+    /// 核心动作：加载数据（支持分页）
+    /// is_reload: true = 重新搜索/刷新（清空列表）；false = 滚动加载下一页（追加列表）
+    pub fn fetch_page(&mut self, cx: &mut Context<Self>, is_reload: bool) {
+        if self.is_loading || self.is_loading_more {
+            return;
+        }
+        if !is_reload && !self.has_more {
+            return;
+        }
+
+        if is_reload {
+            self.is_loading = true;
+            self.page = 1;
+            self.has_more = true;
+            self.subjects.clear();
+            // 注意：不要在这里重置 total_count，否则 UI 会闪烁
+        } else {
+            self.is_loading_more = true;
+            self.page += 1;
+        }
+
         cx.notify();
 
         let db = self.db_manager.clone();
@@ -52,42 +78,58 @@ impl Models {
         let page = self.page;
         let page_size = self.page_size;
 
-        // 2. 派发异步任务
-        // 【关键修正2】：去掉显式的闭包参数类型标注（因为 WeakModel 可能叫 WeakModelHandle），
-        // 转而通过标注内部 result 和 store 的类型，让编译器反向推导。
         cx.spawn(async move |this, cx| {
             // --- 后台线程 ---
-            let result: Result<Vec<Subject>> = cx
+            // 返回值类型改为 Option<usize>，表示 total_count 是可选更新的
+            let result: Result<(Vec<Subject>, Option<usize>)> = cx
                 .background_executor()
                 .spawn(async move {
                     let conn = db.get_conn()?;
-                    DataService::search_subjects(&conn, Some(&query), page, page_size)
+
+                    // 1. 获取分页数据 (总是执行)
+                    let data = DataService::search_subjects(&conn, Some(&query), page, page_size)?;
+
+                    // 2. 优化：仅在 is_reload 为 true 时查询总数
+                    let count = if is_reload {
+                        Some(DataService::count_subjects(&conn, Some(&query))?)
+                    } else {
+                        None // 加载下一页时，不更新总数
+                    };
+
+                    Ok((data, count))
                 })
                 .await;
 
             // --- UI 线程 ---
             let _ = this.update(cx, |store, cx| {
                 store.is_loading = false;
+                store.is_loading_more = false;
 
                 match result {
-                    Ok(data) => {
-                        println!(">>> [UI Check] fetch_data success!");
-                        println!(
-                            ">>> [UI Check] Loaded {} subjects into Memory (Store).",
-                            data.len()
-                        );
-                        if let Some(first) = data.first() {
-                            println!(
-                                ">>> [UI Check] First Subject in Memory: ID={} Name={}",
-                                first.id, first.name
-                            );
+                    Ok((new_data, total_opt)) => {
+                        // 只有当 total_opt 有值时才更新 store.total_count
+                        if let Some(total) = total_opt {
+                            store.total_count = total;
                         }
 
-                        store.subjects = data;
+                        // 判断是否还有更多页
+                        if new_data.len() < page_size {
+                            store.has_more = false;
+                        }
+
+                        if is_reload {
+                            store.subjects = new_data;
+                        } else {
+                            store.subjects.extend(new_data);
+                        }
+
                         store.recalc_headers();
                     }
                     Err(e) => {
                         store.error_msg = Some(e.to_string());
+                        if !is_reload && store.page > 1 {
+                            store.page -= 1;
+                        }
                     }
                 }
                 cx.notify();
@@ -127,8 +169,8 @@ impl Models {
 
         println!(">>> [Seeding] Starting to insert dummy data...");
 
-        // 2. 插入 60 条数据
-        for i in 1..=60 {
+        // 2. 插入 120 条数据
+        for i in 1..=120 {
             let name = format!("Test User {:03}", i);
             let mut row = HashMap::new();
             // 模拟多样化数据
@@ -187,7 +229,7 @@ pub fn build_models(cx: &mut App) {
         // just for test
         models.seed_dummy_data();
 
-        models.fetch_data(cx);
+        models.fetch_page(cx, true);
         models
     });
 
