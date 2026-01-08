@@ -2,7 +2,7 @@
 
 use crate::backend::models::Subject;
 use anyhow::{Context, Result};
-use rusqlite::{Connection, OptionalExtension, Transaction, params};
+use rusqlite::{Connection, OptionalExtension, ToSql, Transaction, params};
 use serde_json::{Map, Value};
 use std::collections::HashMap;
 
@@ -76,24 +76,189 @@ impl DataService {
         Ok(())
     }
 
+    /// 核心：构建动态 SQL WHERE 子句 (增强版)。
+    ///
+    /// 该函数负责解析用户输入的自然语言查询字符串，并将其转换为 SQLite 的 `WHERE` 子句及对应的参数列表。
+    /// 支持多条件组合（AND 逻辑）、智能类型转换（数字 vs 字符串）以及多种高级操作符。
+    ///
+    /// # 🔍 支持的搜索语法
+    ///
+    /// ## 1. 范围查询 (Range)
+    /// 用于查找介于两个值之间的数据。
+    /// - **语法**: `key:min..max` (**推荐**，通用性强，支持日期和数字)
+    /// - **语法**: `key:min-max` (兼容性写法，**仅支持纯数字**，不可用于日期)
+    /// - **示例**:
+    ///     - `age:18..30` → 查找 `age` 在 18 到 30 岁之间的用户。
+    ///     - `created_at:2023-01-01..2023-12-31` → 查找 2023 年创建的所有记录。
+    ///
+    /// ## 2. 比较查询 (Comparison)
+    /// 用于查找大于、小于或等于某值的数据。自动处理数字类型的比较。
+    /// - **语法**: `key:>val`, `key:>=val`, `key:<val`, `key:<=val`
+    /// - **示例**:
+    ///     - `score:>90` → 查找分数大于 90 的记录。
+    ///     - `age:>=18` → 查找成年人。
+    ///     - `updated_at:>=2024-01-01` → 查找 2024 年及以后更新的记录。
+    ///
+    /// ## 3. 指定字段匹配 (Key-Value)
+    /// 指定特定字段进行查找。对于文本字段默认使用 `LIKE` 模糊匹配。
+    /// - **语法**: `key:value`
+    /// - **示例**:
+    ///     - `name:Alice` → 查找名字中包含 "Alice" 的记录。
+    ///     - `city:Shanghai` → 查找 JSON 属性中 `city` 为 "Shanghai" 的记录。
+    ///     - `role:Admin` → 查找角色为 "Admin" 的记录。
+    ///
+    /// ## 4. 全局关键字搜索 (Global Keyword)
+    /// 不指定 Key 时，将在 `name` 和所有 `attributes` (JSON) 中进行广撒网式模糊搜索。
+    /// - **语法**: `keyword`
+    /// - **示例**:
+    ///     - `Bob` → 查找名字含 "Bob" 或任意属性（如备注、地址）含 "Bob" 的记录。
+    ///
+    /// # 💡 组合使用示例
+    /// 多个条件可以用空格分隔，它们之间是 **AND (且)** 的关系。
+    ///
+    /// ```text
+    /// // 查找：北京的、20到30岁的、管理员
+    /// city:Beijing age:20..30 role:Admin
+    /// ```
+    ///
+    /// # ⚙️ 实现细节
+    /// - 对 `name`, `created_at`, `updated_at` 等一级字段直接查询。
+    /// - 对其他字段自动使用 `json_extract(attributes, '$.key')` 提取 JSON 属性。
+    /// - 针对数字比较，自动添加 `CAST(... AS REAL)` 以修复 SQLite 字符串与数字比较的陷阱。
+    fn build_search_query(query: Option<&str>) -> (String, Vec<String>) {
+        let raw_query = match query {
+            Some(q) if !q.trim().is_empty() => q.trim(),
+            _ => return (String::new(), vec![]),
+        };
+
+        let mut conditions = Vec::new();
+        let mut params = Vec::new();
+
+        for term in raw_query.split_whitespace() {
+            if let Some((key, val)) = term.split_once(':') {
+                // 1. 确定字段表达式
+                // created_at 和 updated_at 是真实列，name 也是
+                let column_expr = match key {
+                    "name" => "name".to_string(),
+                    "created_at" => "created_at".to_string(),
+                    "updated_at" => "updated_at".to_string(),
+                    _ => format!("json_extract(attributes, '$.{}')", key),
+                };
+
+                // 辅助闭包：判断是否需要数字转换
+                // 如果输入值能解析为数字，且 key 不是时间字段，则强制转为 REAL 比较
+                let wrap_cast = |expr: &str, val: &str| -> String {
+                    if val.parse::<f64>().is_ok() && key != "created_at" && key != "updated_at" {
+                        format!("CAST({} AS REAL)", expr)
+                    } else {
+                        expr.to_string()
+                    }
+                };
+
+                // 2. 解析操作符
+                if let Some((min, max)) = val.split_once("..") {
+                    // --- Range: ".." (优先支持，兼容日期) ---
+                    // date:2023-01-01..2023-12-31
+                    let col_left = wrap_cast(&column_expr, min);
+                    let col_right = wrap_cast(&column_expr, max);
+
+                    // 注意：这里的 CAST(? AS REAL) 是为了让 SQLite 把传入的字符串参数也当数字处理
+                    let val_placeholder_min = if min.parse::<f64>().is_ok() && key != "created_at" {
+                        "CAST(? AS REAL)"
+                    } else {
+                        "?"
+                    };
+                    let val_placeholder_max = if max.parse::<f64>().is_ok() && key != "created_at" {
+                        "CAST(? AS REAL)"
+                    } else {
+                        "?"
+                    };
+
+                    conditions.push(format!(
+                        "({} >= {} AND {} <= {})",
+                        col_left, val_placeholder_min, col_right, val_placeholder_max
+                    ));
+                    params.push(min.to_string());
+                    params.push(max.to_string());
+                } else if let Some(stripped) = val.strip_prefix(">=") {
+                    // --- Compare: ">=" ---
+                    let col = wrap_cast(&column_expr, stripped);
+                    let placeholder = if stripped.parse::<f64>().is_ok() && key != "created_at" {
+                        "CAST(? AS REAL)"
+                    } else {
+                        "?"
+                    };
+                    conditions.push(format!("{} >= {}", col, placeholder));
+                    params.push(stripped.to_string());
+                } else if let Some(stripped) = val.strip_prefix("<=") {
+                    // --- Compare: "<=" ---
+                    let col = wrap_cast(&column_expr, stripped);
+                    let placeholder = if stripped.parse::<f64>().is_ok() && key != "created_at" {
+                        "CAST(? AS REAL)"
+                    } else {
+                        "?"
+                    };
+                    conditions.push(format!("{} <= {}", col, placeholder));
+                    params.push(stripped.to_string());
+                } else if let Some(stripped) = val.strip_prefix(">") {
+                    // --- Compare: ">" ---
+                    let col = wrap_cast(&column_expr, stripped);
+                    let placeholder = if stripped.parse::<f64>().is_ok() && key != "created_at" {
+                        "CAST(? AS REAL)"
+                    } else {
+                        "?"
+                    };
+                    conditions.push(format!("{} > {}", col, placeholder));
+                    params.push(stripped.to_string());
+                } else if let Some(stripped) = val.strip_prefix("<") {
+                    // --- Compare: "<" ---
+                    let col = wrap_cast(&column_expr, stripped);
+                    let placeholder = if stripped.parse::<f64>().is_ok() && key != "created_at" {
+                        "CAST(? AS REAL)"
+                    } else {
+                        "?"
+                    };
+                    conditions.push(format!("{} < {}", col, placeholder));
+                    params.push(stripped.to_string());
+                } else if let Some((min, max)) = val.split_once('-') {
+                    // --- Legacy Range: "-" (仅当两边都是纯数字时生效，避免误伤日期) ---
+                    if min.parse::<f64>().is_ok() && max.parse::<f64>().is_ok() {
+                        conditions.push(format!("(CAST({} AS REAL) >= CAST(? AS REAL) AND CAST({} AS REAL) <= CAST(? AS REAL))", column_expr, column_expr));
+                        params.push(min.to_string());
+                        params.push(max.to_string());
+                    } else {
+                        // 如果包含 - 但不是纯数字，当作普通字符串 LIKE 查询 (例如 name:Jean-Pierre)
+                        conditions.push(format!("{} LIKE ?", column_expr));
+                        params.push(format!("%{}%", val));
+                    }
+                } else {
+                    // --- Default: LIKE (Fuzzy Match) ---
+                    conditions.push(format!("{} LIKE ?", column_expr));
+                    params.push(format!("%{}%", val));
+                }
+            } else {
+                // --- Global Keyword Search ---
+                conditions.push("(name LIKE ? OR attributes LIKE ?)".to_string());
+                params.push(format!("%{}%", term));
+                params.push(format!("%{}%", term));
+            }
+        }
+
+        if conditions.is_empty() {
+            (String::new(), vec![])
+        } else {
+            (format!("WHERE {}", conditions.join(" AND ")), params)
+        }
+    }
+
     /// 统计符合条件的总数
     pub fn count_subjects(conn: &Connection, query: Option<&str>) -> Result<usize> {
-        let (where_clause, params) = match query {
-            Some(q) if !q.is_empty() => (
-                "WHERE name LIKE ?1 OR attributes LIKE ?1",
-                vec![format!("%{}%", q)],
-            ),
-            _ => ("", vec![]),
-        };
-
+        let (where_clause, sql_params) = Self::build_search_query(query);
         let sql = format!("SELECT count(*) FROM subjects {}", where_clause);
 
-        let count: usize = if params.is_empty() {
-            conn.query_row(&sql, [], |r| r.get(0))?
-        } else {
-            conn.query_row(&sql, params![params[0]], |r| r.get(0))?
-        };
+        let params_ref: Vec<&dyn ToSql> = sql_params.iter().map(|s| s as &dyn ToSql).collect();
 
+        let count: usize = conn.query_row(&sql, params_ref.as_slice(), |r| r.get(0))?;
         Ok(count)
     }
 
@@ -107,38 +272,31 @@ impl DataService {
     ) -> Result<Vec<Subject>> {
         let offset = (page.max(1) - 1) * page_size;
 
-        let (where_clause, params) = match query {
-            Some(q) if !q.is_empty() => (
-                "WHERE name LIKE ?1 OR attributes LIKE ?1",
-                vec![format!("%{}%", q)],
-            ),
-            _ => ("", vec![]),
-        };
+        // 1. 调用构建器生成 SQL 片段
+        let (where_clause, sql_params) = Self::build_search_query(query);
 
         let sql = format!(
             "SELECT id, name, attributes, created_at, updated_at
-                 FROM subjects
-                 {}
-                 ORDER BY name ASC
-                 LIMIT {} OFFSET {}",
+                     FROM subjects
+                     {}
+                     ORDER BY name COLLATE NOCASE ASC
+                     LIMIT {} OFFSET {}",
             where_clause, page_size, offset
         );
 
         let mut stmt = conn.prepare(&sql)?;
 
-        let mapper = |row: &rusqlite::Row| Self::map_row_to_subject(row);
+        // 2. 动态绑定参数
+        // rusqlite 需要 &dyn ToSql 的 slice，我们需要转换一下
+        let params_ref: Vec<&dyn ToSql> = sql_params.iter().map(|s| s as &dyn ToSql).collect();
 
-        let rows = if params.is_empty() {
-            stmt.query_map([], mapper)?
-        } else {
-            stmt.query_map(params![params[0]], mapper)?
-        };
+        let mapper = |row: &rusqlite::Row| Self::map_row_to_subject(row);
+        let rows = stmt.query_map(params_ref.as_slice(), mapper)?;
 
         let mut results = Vec::new();
         for r in rows {
             results.push(r?);
         }
-        // println!("{:#?}", results);
         Ok(results)
     }
 

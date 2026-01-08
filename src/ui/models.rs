@@ -121,6 +121,7 @@ impl Models {
                             store.subjects = new_data;
                         } else {
                             store.subjects.extend(new_data);
+                            println!("{:?}", store.subjects);
                         }
 
                         store.recalc_headers();

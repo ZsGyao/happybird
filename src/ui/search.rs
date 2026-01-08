@@ -1,6 +1,9 @@
-use crate::ui::{hb_icons::HappyBirdIcons, info_panel::InfoPanel};
+use std::time::Duration;
+
+use crate::ui::hb_icons::HappyBirdIcons;
+use crate::ui::models::GlobalAppState;
 use crate::zlog::log_impl::debug;
-use gpui::{AppContext, Context, Entity, Render, Subscription, Window};
+use gpui::{App, AppContext, Context, Entity, Render, Subscription, Task, WeakEntity, Window};
 use gpui_component::{
     Icon,
     input::{Input, InputEvent, InputState},
@@ -12,36 +15,48 @@ pub struct SearchPanel {
 }
 
 impl SearchPanel {
-    pub fn new(window: &mut Window, cx: &mut Context<InfoPanel>) -> Entity<Self> {
-        let search_input = cx.new(|cx| InputState::new(window, cx).placeholder("Search..."));
-        let _search_subscription = cx.subscribe_in(
-            &search_input,
-            window,
-            |_view, state, event, _window, cx| match event {
-                InputEvent::Change => {
-                    let text = state.read(cx).value();
-                    debug!("Input changed: {}", text);
-                }
-                InputEvent::PressEnter { secondary } => {
-                    if !*secondary {
-                        // if user only press enter
-                        debug!("Enter pressed, secondary {}", secondary);
-                        let text = state.read(cx).value();
-                        debug!("Input: {} ", text);
-                    } else {
-                        // if user press enter + else (like shift)
-                        debug!("Enter pressed, secondary {}", secondary);
-                    }
-                }
-                InputEvent::Focus => debug!("Input focused"),
-                InputEvent::Blur => debug!("Input blurred"),
-            },
-        );
+    pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
+        let search_input = cx.new(|cx| {
+            InputState::new(window, cx).placeholder("Search (e.g. name:Bob age:20-30)...")
+        });
 
-        cx.new(|_cx| Self {
-            search_input,
-            _search_subscription,
+        cx.new(|cx| {
+            let _search_subscription = cx.subscribe_in(
+                &search_input,
+                window,
+                |this: &mut Self, state, event, _window, cx| match event {
+                    InputEvent::Change => {
+                        let query = state.read(cx).value();
+
+                        debug!("Input changed: {}", query);
+                    }
+                    InputEvent::PressEnter { .. } => {
+                        let query = state.read(cx).value();
+
+                        this.perform_search(query.to_string(), cx);
+                    }
+                    InputEvent::Focus => debug!("Input focused"),
+                    InputEvent::Blur => debug!("Input blurred"),
+                },
+            );
+            Self {
+                search_input,
+                _search_subscription,
+            }
         })
+    }
+
+    /// 执行实际的搜索逻辑
+    fn perform_search(&mut self, query: String, cx: &mut Context<Self>) {
+        // 获取全局状态
+        let global_model = cx.global::<GlobalAppState>().0.clone();
+
+        global_model.update(cx, |model, cx| {
+            // 更新查询条件
+            model.search_query = query;
+            // 触发重新加载 (is_reload = true)，这会重置页码并清空列表
+            model.fetch_page(cx, true);
+        });
     }
 }
 
