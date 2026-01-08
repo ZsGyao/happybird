@@ -317,6 +317,7 @@ pub fn run() -> anyhow::Result<()> {
 
         find_fonts(cx).expect("unable to load fonts");
         theme::init(cx);
+
         build_models(cx);
         cx.activate(true);
 

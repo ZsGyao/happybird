@@ -127,8 +127,8 @@ impl Models {
 
         println!(">>> [Seeding] Starting to insert dummy data...");
 
-        // 2. 插入 20 条数据
-        for i in 1..=20 {
+        // 2. 插入 60 条数据
+        for i in 1..=60 {
             let name = format!("Test User {:03}", i);
             let mut row = HashMap::new();
             // 模拟多样化数据
