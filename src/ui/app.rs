@@ -7,6 +7,7 @@ use crate::{
     ui::{
         assets::HappybirdAsset,
         constants::{APP_LEFT_PANEL_INIT_W, APP_RIGHT_PANEL_INIT_W},
+        import_panel::ImportPanel,
         info_panel::InfoPanel,
         models::GlobalAppState,
         theme,
@@ -44,6 +45,7 @@ pub fn find_fonts(cx: &mut App) -> gpui::Result<()> {
 pub struct WindowShadow {
     pub header: Entity<Header>,
     pub info_panel: Entity<InfoPanel>,
+    pub import_panel: Entity<ImportPanel>,
 }
 
 impl Render for WindowShadow {
@@ -59,6 +61,7 @@ impl Render for WindowShadow {
             window.bounds().size.width - APP_LEFT_PANEL_INIT_W - APP_RIGHT_PANEL_INIT_W;
 
         let show_about = cx.global::<GlobalAppState>().0.read(cx).show_about;
+        let import_preview_show = cx.global::<GlobalAppState>().0.read(cx).show_import_modal;
 
         let mut element = div()
             .id("window-backdrop")
@@ -244,6 +247,9 @@ impl Render for WindowShadow {
                                 });
                             debug!("Folder show about exit");
                         }))
+                    })
+                    .when(import_preview_show, |this| {
+                        this.child(self.import_panel.clone())
                     }),
             );
 
@@ -356,6 +362,7 @@ pub fn run() -> anyhow::Result<()> {
                 let view = cx.new(|cx| WindowShadow {
                     header: Header::new(cx),
                     info_panel: InfoPanel::new(window, cx),
+                    import_panel: ImportPanel::new(cx),
                 });
                 Root::new(view, window, cx)
             })

@@ -5,6 +5,7 @@ mod components;
 pub mod constants;
 mod hb_icons;
 mod header;
+pub mod import_panel;
 pub mod indent_guides;
 pub mod info_panel;
 mod models;
