@@ -200,8 +200,6 @@ impl Render for ImportPanel {
             .flex()
             .items_center()
             .justify_center()
-            // ❌ 移除最外层的 stop_propagation，因为它可能误杀内部按钮的事件状态
-            // .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .child(
                 // 弹窗卡片主体
                 v_flex()
@@ -243,7 +241,6 @@ impl Render for ImportPanel {
                         div()
                             .flex_1() // 占据剩余空间
                             .size_full() // 宽/高撑满
-                            .bg(gpui::red())
                             .min_h(px(0.0)) // 🔥 核心修复：强制限制 flex 内部高度，防止表格溢出覆盖底部
                             .child(
                                 // Table 组件

@@ -45,7 +45,7 @@ pub fn find_fonts(cx: &mut App) -> gpui::Result<()> {
 pub struct WindowShadow {
     pub header: Entity<Header>,
     pub info_panel: Entity<InfoPanel>,
-    // pub import_panel: Entity<ImportPanel>,
+    pub import_panel: Option<Entity<ImportPanel>>,
 }
 
 impl Render for WindowShadow {
@@ -61,7 +61,22 @@ impl Render for WindowShadow {
             window.bounds().size.width - APP_LEFT_PANEL_INIT_W - APP_RIGHT_PANEL_INIT_W;
 
         let show_about = cx.global::<GlobalAppState>().0.read(cx).show_about;
-        let import_preview_show = cx.global::<GlobalAppState>().0.read(cx).show_import_modal;
+        // 1. 获取开关状态
+        let global = cx.global::<GlobalAppState>().0.read(cx);
+        let show = global.show_import_modal;
+        let is_loading = global.is_importing; // 你可以在界面上根据这个显示个 Loading
+
+        // 2. 【核心逻辑】开关开了才创建，关了就销毁
+        if show {
+            // 如果开关是开的，但还没创建过 -> 创建它！
+            // 此时 Model 里肯定已经有数据了，因为你是先 set_data 后 set_show 的
+            if self.import_panel.is_none() {
+                self.import_panel = Some(ImportPanel::new(window, cx));
+            }
+        } else {
+            // 开关关了 -> 扔掉，释放内存
+            self.import_panel = None;
+        }
 
         let mut element = div()
             .id("window-backdrop")
@@ -248,9 +263,8 @@ impl Render for WindowShadow {
                             debug!("Folder show about exit");
                         }))
                     })
-                    .when(import_preview_show, |this| {
-                        let import_view = ImportPanel::new(window, cx);
-                        this.child(import_view)
+                    .when_some(self.import_panel.clone(), |this, panel| {
+                        this.child(div().absolute().size_full().child(panel))
                     }),
             );
 
@@ -363,7 +377,7 @@ pub fn run() -> anyhow::Result<()> {
                 let view = cx.new(|cx| WindowShadow {
                     header: Header::new(cx),
                     info_panel: InfoPanel::new(window, cx),
-                    // import_panel: ImportPanel::new(window, cx),
+                    import_panel: None,
                 });
                 Root::new(view, window, cx)
             })
