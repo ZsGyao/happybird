@@ -3,8 +3,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// 数据库中 `subjects` 表的映射结构体。
-/// 包含了固定的元数据和动态的 JSON 属性。
+/// Subject table mapping from database,
+/// including metadata and dynamic JSON attributes
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Subject {
     /// 唯一标识符
@@ -19,7 +19,7 @@ pub struct Subject {
     pub updated_at: String,
 }
 
-/// 用于前端列表展示的简化行结构（如果需要分离视图模型）。
+/// Use to display row data in front ui layer
 #[derive(Debug, Clone)]
 pub struct SubjectRow {
     pub id: i32,
@@ -27,7 +27,7 @@ pub struct SubjectRow {
     pub attributes: Value,
 }
 
-/// 审计日志结构体
+/// Change log data struct
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ChangeLog {
     pub id: i32,

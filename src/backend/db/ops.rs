@@ -1,17 +1,17 @@
 // src/backend/ops.rs
 
-use crate::backend::models::Subject;
+use crate::backend::db::models::Subject;
 use anyhow::{Context, Result};
 use rusqlite::{Connection, OptionalExtension, ToSql, Transaction, params};
 use serde_json::{Map, Value};
 use std::collections::HashMap;
 
-/// 数据服务层：封装所有具体的数据库 CRUD 操作。
+/// Data service layer, impl all database CRUD operations
 pub struct DataService;
 
 impl DataService {
     // ========================================================================
-    //  Public Interfaces (外部调用的接口)
+    //  Public Interfaces (External API)
     // ========================================================================
 
     /// 导入一行 Excel 数据。
@@ -76,7 +76,7 @@ impl DataService {
         Ok(())
     }
 
-    /// 核心：构建动态 SQL WHERE 子句 (增强版)。
+    /// 核心：构建动态 SQL WHERE 子句 。
     ///
     /// 该函数负责解析用户输入的自然语言查询字符串，并将其转换为 SQLite 的 `WHERE` 子句及对应的参数列表。
     /// 支持多条件组合（AND 逻辑）、智能类型转换（数字 vs 字符串）以及多种高级操作符。
@@ -544,7 +544,7 @@ impl DataService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::backend::schema;
+    use crate::backend::db::schema;
     use rusqlite::Connection;
     use serde_json::json;
     use std::collections::HashMap; // 假设 schema 模块可见

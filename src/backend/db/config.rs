@@ -5,15 +5,14 @@ use rusqlite::Connection;
 use std::fs;
 use std::path::PathBuf;
 
-/// 数据库管理器
-/// 负责处理文件路径、初始化连接和性能配置。
+/// Database Manager, which manage .db file path, init connection
 pub struct DbManager {
     db_path: PathBuf,
 }
 
 impl DbManager {
-    /// 创建一个新的管理器实例。
-    /// 这会自动检测系统文档路径，并创建 'HappyBird' 文件夹。
+    /// Create a new DbManager instance,
+    /// it will detect os system documentpath and create 'HappyBird' dir
     pub fn new() -> Result<Self> {
         let path = Self::resolve_db_path()?;
         println!(">> [Database] Path: {:?}", path);
@@ -23,8 +22,8 @@ impl DbManager {
         Ok(manager)
     }
 
-    /// 获取一个新的数据库连接。
-    /// 注意：Rusqlite 连接不是线程安全的，但在多线程中每个线程创建一个连接是最佳实践。
+    /// Get a new database conn, Note that Rusqlite conn is not thread safe,
+    /// but create single conn in single thread is perfect practice
     pub fn get_conn(&self) -> Result<Connection> {
         let conn = Connection::open(&self.db_path)?;
 
@@ -38,7 +37,7 @@ impl DbManager {
         Ok(conn)
     }
 
-    /// 内部逻辑：解析存储路径
+    /// Prase .db file store path
     fn resolve_db_path() -> Result<PathBuf> {
         // 优先存放在用户的文档目录下，更符合桌面应用规范
         let mut path = dirs::document_dir().context("无法获取系统文档目录")?;
@@ -51,10 +50,10 @@ impl DbManager {
         Ok(path)
     }
 
-    /// 内部逻辑：初始化表结构
+    /// Init database schema
     fn init_system(&self) -> Result<()> {
         let conn = self.get_conn()?;
-        crate::backend::schema::create_tables(&conn)?;
+        crate::backend::db::schema::create_tables(&conn)?;
         Ok(())
     }
 }

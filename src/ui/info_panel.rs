@@ -11,7 +11,6 @@ use gpui::{
 };
 use gpui_component::{
     ActiveTheme, Icon, IconName, StyledExt, button::Button, h_flex, label::Label, list::ListItem,
-    scroll::ScrollableElement, tree::Tree,
 };
 use smallvec::SmallVec;
 
@@ -191,12 +190,11 @@ impl InfoPanel {
     fn render_tree_item(
         &self,
         ix: usize,
-        window: &mut Window,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
         // 定义布局常量，确保对齐
-        const INDENT_SIZE: Pixels = px(20.0);
-        const ICON_SIZE: Pixels = px(20.0);
+        const INDENT_SIZE: Pixels = px(16.0);
 
         // 安全检查：防止渲染越界
         if ix >= self.tree_items.len() {
@@ -242,15 +240,11 @@ impl InfoPanel {
             .relative()
             .items_center()
             .rounded_none()
-            .border_1()
-            .border_r_2()
-            .border_color(cx.theme().colors.border)
             .pl(INDENT_SIZE * depth as f32)
             .pr(px(8.0))
             .cursor_pointer()
             .bg(bg_color)
-            .hover(|s| s.bg(cx.theme().colors.list_hover))
-            .on_click(cx.listener(move |this, event: &ClickEvent, window, cx| {
+            .on_click(cx.listener(move |this, event: &ClickEvent, _window, cx| {
                 if event.is_right_click() || event.first_focus() {
                     return;
                 }
@@ -268,6 +262,7 @@ impl InfoPanel {
                     h_flex()
                         .items_center()
                         .gap_2()
+                        .text_sm()
                         .child(if is_folder {
                             Icon::new(IconName::Folder)
                         } else {
@@ -284,15 +279,15 @@ impl Render for InfoPanel {
         let item_count = self.tree_items.len();
 
         // 样式常量
-        const INDENT_SIZE: Pixels = px(20.0);
-        const GUIDE_OFFSET: Pixels = px(10.0); // 缩进线应该在图标容器(20px)的中间(10px)
+        const INDENT_SIZE: Pixels = px(16.0);
+        const GUIDE_OFFSET: Pixels = px(16.0); // 缩进线应该在图标容器(16px)的中间(8px)
 
         div()
             .v_flex()
             .id("info-panel")
             .size_full()
             .p(px(13.0))
-            .bg(cx.theme().colors.secondary)
+            .bg(cx.theme().colors.background)
             .relative()
             .track_focus(&self.focus_handle)
             .gap(px(8.0))
@@ -365,9 +360,9 @@ impl Render for InfoPanel {
                     .flex()
                     .flex_col()
                     .gap_2()
-                    .pt(px(8.0))
                     .border_t_1()
-                    .border_color(cx.theme().colors.blue_light)
+                    .border_color(cx.theme().colors.border)
+                    .pt(px(8.0))
                     .child(
                         Button::new("Import-button")
                             .w_full()

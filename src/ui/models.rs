@@ -7,7 +7,7 @@ use anyhow::Result;
 use gpui::{App, Context, Entity, Global, prelude::*};
 use serde_json::json;
 
-use crate::backend::{config::DbManager, models::Subject, ops::DataService};
+use crate::backend::db::{config::DbManager, models::Subject, ops::DataService};
 
 pub struct Models {
     db_manager: Arc<DbManager>,
