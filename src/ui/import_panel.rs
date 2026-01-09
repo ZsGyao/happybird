@@ -32,11 +32,21 @@ impl Render for ImportPanel {
         // }
 
         let data = model.import_preview_data.as_ref().unwrap();
-        let headers: Vec<String> = if let Some(first) = data.first() {
+        let mut headers: Vec<String> = if let Some(first) = data.first() {
             first.keys().cloned().collect()
         } else {
             vec![]
         };
+        // 对表头进行排序：强制 "姓名" 排第一，其他按字母顺序
+        headers.sort_by(|a, b| {
+            if a == "姓名" {
+                std::cmp::Ordering::Less // a 是姓名，a 排前面
+            } else if b == "姓名" {
+                std::cmp::Ordering::Greater // b 是姓名，b 排前面（即 a 排后面）
+            } else {
+                a.cmp(b) // 其他字段按字典序排列 (年龄, 职位, 部门...)，保持界面整洁
+            }
+        });
 
         // 4. 构建 UI
         div()
@@ -51,8 +61,8 @@ impl Render for ImportPanel {
             // .on_mouse_down(MouseButton::Left, |_, cx| cx.stop_propagation())
             .child(
                 v_flex()
-                    .w(px(700.0))
-                    .h(px(500.0))
+                    .w(px(800.0))
+                    .h(px(600.0))
                     .bg(cx.theme().colors.background)
                     .border_1()
                     .border_color(cx.theme().colors.border)
