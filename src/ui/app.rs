@@ -45,7 +45,7 @@ pub fn find_fonts(cx: &mut App) -> gpui::Result<()> {
 pub struct WindowShadow {
     pub header: Entity<Header>,
     pub info_panel: Entity<InfoPanel>,
-    pub import_panel: Entity<ImportPanel>,
+    // pub import_panel: Entity<ImportPanel>,
 }
 
 impl Render for WindowShadow {
@@ -249,7 +249,8 @@ impl Render for WindowShadow {
                         }))
                     })
                     .when(import_preview_show, |this| {
-                        this.child(self.import_panel.clone())
+                        let import_view = ImportPanel::new(window, cx);
+                        this.child(import_view)
                     }),
             );
 
@@ -362,7 +363,7 @@ pub fn run() -> anyhow::Result<()> {
                 let view = cx.new(|cx| WindowShadow {
                     header: Header::new(cx),
                     info_panel: InfoPanel::new(window, cx),
-                    import_panel: ImportPanel::new(cx),
+                    // import_panel: ImportPanel::new(window, cx),
                 });
                 Root::new(view, window, cx)
             })
