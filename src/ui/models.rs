@@ -5,9 +5,12 @@ use std::{
 // 【关键修正1】引入 prelude 和 AppContext trait，确保 cx.new 和 update 可用
 use anyhow::Result;
 use gpui::{App, Context, Entity, Global, prelude::*};
-use serde_json::json;
+use serde_json::{Value, json};
 
-use crate::backend::db::{config::DbManager, models::Subject, ops::DataService};
+use crate::{
+    backend::db::{config::DbManager, models::Subject, ops::DataService},
+    debug,
+};
 
 pub struct Models {
     db_manager: Arc<DbManager>,
@@ -25,6 +28,12 @@ pub struct Models {
     pub error_msg: Option<String>,
     pub selected_subject_id: Option<i32>,
     pub search_query: String,
+
+    // ------ 导入流程状态 --------
+    pub import_preview_data: Option<Vec<HashMap<String, Value>>>, // 暂存解析后的数据
+    pub show_import_modal: bool,                                  // 控制模态框显示
+    pub is_importing: bool,                                       // 控制导入过程中的 Loading 状态
+    pub import_error: Option<String>,
 
     pub show_about: bool,
 }
@@ -47,6 +56,10 @@ impl Models {
             search_query: String::new(),
             show_about: false,
             total_count: 0,
+            import_preview_data: None,
+            show_import_modal: false,
+            is_importing: false,
+            import_error: None,
         }
     }
 
@@ -151,6 +164,86 @@ impl Models {
         self.dynamic_headers = set.into_iter().collect();
     }
 
+    // --- Action 1: 解析文件 (UI -> Backend) ---
+    pub fn preview_file(&mut self, cx: &mut Context<Self>, path: std::path::PathBuf) {
+        self.is_importing = true; // 复用全局 loading 或使用 is_importing
+        cx.notify();
+
+        cx.spawn(async move |this, cx| {
+            // 在后台线程解析
+            let result = cx
+                .background_executor()
+                .spawn(async move { crate::backend::file::importer::parse_file(&path) })
+                .await;
+
+            this.update(cx, |model, cx| {
+                model.is_importing = false;
+                match result {
+                    Ok(data) => {
+                        model.import_preview_data = Some(data);
+                        debug!("{:?}", model.import_preview_data.clone().unwrap().first());
+                        model.show_import_modal = true; // 打开预览弹窗
+                        model.import_error = None;
+                    }
+                    Err(e) => {
+                        model.import_error = Some(format!("Parse failed: {}", e));
+                    }
+                }
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    // --- Action 2: 确认导入 (Preview -> DB) ---
+    pub fn confirm_import(&mut self, cx: &mut Context<Self>) {
+        if let Some(data) = self.import_preview_data.take() {
+            self.is_importing = true;
+            self.show_import_modal = false; // 关闭弹窗
+            cx.notify();
+
+            let db = self.db_manager.clone();
+
+            cx.spawn(async move |this, cx| {
+                let result = cx
+                    .background_executor()
+                    .spawn(async move {
+                        let mut conn = db.get_conn()?;
+                        // 假设 Excel 里的主键列名叫 "name" (实际可以做成 UI 可选)
+                        // todo! 主列做成ui可选，当前做成 “姓名”
+                        crate::backend::db::ops::DataService::batch_import(&mut conn, data, "姓名")
+                    })
+                    .await;
+
+                this.update(cx, |model, cx| {
+                    model.is_importing = false;
+                    match result {
+                        Ok(count) => {
+                            println!("Successfully imported {} rows", count);
+                            // 导入成功后，刷新列表 (重新加载第一页)
+                            model.fetch_page(cx, true);
+                        }
+                        Err(e) => {
+                            model.import_error = Some(format!("DB Import failed: {}", e));
+                            // 如果失败，可以考虑重新打开模态框让用户重试，或者只显示错误
+                        }
+                    }
+                })
+                .ok();
+            })
+            .detach();
+        }
+    }
+
+    // --- Action 3: 取消导入 ---
+    pub fn cancel_import(&mut self, cx: &mut Context<Self>) {
+        self.import_preview_data = None;
+        self.show_import_modal = false;
+        self.import_error = None;
+        cx.notify();
+    }
+
     /// 🧪 测试专用：生成 Dummy 数据注入数据库
     pub fn seed_dummy_data(&self) {
         let mut conn = self.db_manager.get_conn().expect("Failed to connect DB");
@@ -228,7 +321,7 @@ pub fn build_models(cx: &mut App) {
         let mut models = Models::new();
 
         // just for test
-        models.seed_dummy_data();
+        // models.seed_dummy_data();
 
         models.fetch_page(cx, true);
         models

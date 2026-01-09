@@ -5,19 +5,24 @@
 use std::{collections::HashSet, ops::Range};
 
 use gpui::{
-    App, AppContext, Bounds, ClickEvent, Context, Div, Entity, FocusHandle, InteractiveElement,
-    IntoElement, ParentElement, Pixels, Render, SharedString, Stateful, StatefulInteractiveElement,
-    Styled, UniformListScrollHandle, Window, div, point, px, size, uniform_list,
+    App, AppContext, AsyncApp, AsyncWindowContext, Bounds, ClickEvent, Context, Div, Entity,
+    FocusHandle, InteractiveElement, IntoElement, ParentElement, PathPromptOptions, Pixels, Render,
+    SharedString, Stateful, StatefulInteractiveElement, Styled, UniformListScrollHandle, Window,
+    div, point, px, size, uniform_list,
 };
 use gpui_component::{
     ActiveTheme, Icon, IconName, StyledExt, button::Button, h_flex, label::Label, list::ListItem,
 };
 use smallvec::SmallVec;
 
-use crate::ui::{
-    indent_guides::{IndentGuideColors, RenderedIndentGuide, indent_guides},
-    models::{GlobalAppState, Models},
-    search::SearchPanel,
+use crate::{
+    debug, error,
+    ui::{
+        indent_guides::{IndentGuideColors, RenderedIndentGuide, indent_guides},
+        models::{GlobalAppState, Models},
+        search::SearchPanel,
+    },
+    warn,
 };
 
 /// 用于 UI 渲染的树节点结构。
@@ -367,7 +372,59 @@ impl Render for InfoPanel {
                         Button::new("Import-button")
                             .w_full()
                             .label("Import New Data")
-                            .on_click(|_, _, _| println!("Import clicked")),
+                            .on_click(|_, _, cx| {
+                                // let directories = cx.can_select_mixed_files_and_dirs();
+                                let task = cx.prompt_for_paths(PathPromptOptions {
+                                    files: true,
+                                    directories: false,
+                                    multiple: false,
+                                    prompt: None,
+                                });
+
+                                cx.spawn(|cx: &mut AsyncApp| {
+                                    // 【关键修复步骤】
+                                    // 在进入 async 块之前，我们把 cx 克隆一份。
+                                    // AsyncWindowContext 是一个轻量级句柄，克隆它是廉价且必须的。
+                                    // 这样 async 块捕获的就是一个“拥有所有权”的 cx，而不是临时的引用。
+                                    let cx = cx.clone();
+
+                                    async move {
+                                        match task.await {
+                                            Ok(Ok(Some(paths))) => {
+                                                if let Some(path) = paths.first() {
+                                                    let p = path.clone();
+                                                    debug!("path -> {:?}", p);
+
+                                                    // 3. 使用克隆后的 cx 更新全局状态
+                                                    // 这里的 cx 是 AsyncWindowContext，它可以在后台存活
+                                                    cx.update(|cx| {
+                                                        if cx.has_global::<GlobalAppState>() {
+                                                            let global = cx
+                                                                .global::<GlobalAppState>()
+                                                                .0
+                                                                .clone();
+                                                            global.update(cx, |model, cx| {
+                                                                model.preview_file(cx, p);
+                                                            });
+                                                        }
+                                                    })
+                                                    .ok();
+                                                }
+                                            }
+                                            Ok(Ok(None)) => {
+                                                warn!("Cancel file select");
+                                            }
+                                            Err(e) => {
+                                                error!("System dialog error: {}", e);
+                                            }
+                                            Ok(Err(e)) => {
+                                                error!("Task error: {}", e);
+                                            }
+                                        }
+                                    }
+                                })
+                                .detach(); // detach 表示让这个任务独立运行
+                            }),
                     )
                     .child(
                         div()

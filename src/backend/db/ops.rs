@@ -44,6 +44,63 @@ impl DataService {
         Ok(())
     }
 
+    /// 批量导入 (事务处理)
+    /// rows: 解析后的通用数据
+    /// primary_key_col: 指定 CSV/Excel 中哪一列作为 'name' (主键)
+    pub fn batch_import(
+        conn: &mut Connection,
+        rows: Vec<HashMap<String, Value>>,
+        primary_key_col: &str,
+    ) -> Result<usize> {
+        let tx = conn.transaction()?;
+        let mut count = 0;
+
+        for mut row_data in rows {
+            // 1. 提取 Name
+            // remove 会把 name 从 attributes 中拿出来，剩下的作为 JSON 属性
+            // 如果 JSON 中该字段是字符串，直接用；如果是数字，转字符串
+            let name_val = row_data.remove(primary_key_col).and_then(|v| match v {
+                Value::String(s) => Some(s),
+                Value::Number(n) => Some(n.to_string()),
+                _ => None,
+            });
+
+            if let Some(name) = name_val {
+                if !name.trim().is_empty() {
+                    // --- 复用单行导入逻辑 (内联版) ---
+                    // 注意：因为 tx 是 Transaction，我们不能调用 import_row (它会尝试再开 transaction)
+                    // 所以我们需要直接调用 private helpers
+
+                    // 1. 同步字段定义
+                    Self::sync_definitions(&tx, row_data.keys())?;
+
+                    // 2. 查找现有用户
+                    let existing = Self::find_subject_id_and_attrs(&tx, &name)?;
+
+                    match existing {
+                        Some((id, old_json)) => {
+                            Self::perform_update(
+                                &tx,
+                                id,
+                                &name,
+                                old_json,
+                                row_data,
+                                "IMPORT_UPDATE",
+                            )?;
+                        }
+                        None => {
+                            Self::perform_insert(&tx, &name, row_data)?;
+                        }
+                    }
+                    count += 1;
+                }
+            }
+        }
+
+        tx.commit()?;
+        Ok(count)
+    }
+
     /// 更新指定用户的字段 (Patch 操作)。
     pub fn update_fields(
         conn: &mut Connection,
@@ -547,7 +604,7 @@ mod tests {
     use crate::backend::db::schema;
     use rusqlite::Connection;
     use serde_json::json;
-    use std::collections::HashMap; // 假设 schema 模块可见
+    use std::collections::HashMap;
 
     /// 辅助函数：初始化内存数据库并创建表结构
     fn setup_db() -> Result<Connection> {
@@ -559,28 +616,59 @@ mod tests {
     #[test]
     fn test_import_new_subject() -> Result<()> {
         let mut conn = setup_db()?;
-
-        // 准备数据: Alice, Age=25, Role=Admin
         let mut row = HashMap::new();
         row.insert("age".to_string(), json!(25));
         row.insert("role".to_string(), json!("Admin"));
 
-        // 执行导入
         DataService::import_row(&mut conn, "Alice", row)?;
 
-        // 验证 1: 主表数据
         let subjects = DataService::search_subjects(&conn, Some("Alice"), 1, 10)?;
         assert_eq!(subjects.len(), 1);
         assert_eq!(subjects[0].name, "Alice");
         assert_eq!(subjects[0].attributes.get("age"), Some(&json!(25)));
 
-        // 验证 2: 审计日志 (应该有一条 CREATE 记录)
         let count: i32 = conn.query_row(
             "SELECT count(*) FROM change_log WHERE action_type = 'CREATE'",
             [],
             |r| r.get(0),
         )?;
         assert_eq!(count, 1);
+        Ok(())
+    }
+
+    #[test]
+    fn test_batch_import_transaction() -> Result<()> {
+        let mut conn = setup_db()?;
+
+        // 准备 3 条数据
+        // 1. New User
+        let mut row1 = HashMap::new();
+        row1.insert("name".to_string(), json!("BatchUser1")); // 主键
+        row1.insert("score".to_string(), json!(10));
+
+        // 2. New User
+        let mut row2 = HashMap::new();
+        row2.insert("name".to_string(), json!("BatchUser2"));
+        row2.insert("score".to_string(), json!(20));
+
+        // 3. Invalid User (没有 name，应该被跳过)
+        let mut row3 = HashMap::new();
+        row3.insert("score".to_string(), json!(30));
+
+        let rows = vec![row1, row2, row3];
+
+        // 执行批量导入
+        let count = DataService::batch_import(&mut conn, rows, "name")?;
+
+        // 验证：应该只有 2 条成功插入
+        assert_eq!(count, 2);
+
+        let subjects = DataService::search_subjects(&conn, Some("BatchUser"), 1, 10)?;
+        assert_eq!(subjects.len(), 2);
+
+        // 验证字段定义同步
+        let headers = DataService::get_all_headers(&conn)?;
+        assert!(headers.contains(&"score".to_string()));
 
         Ok(())
     }
@@ -589,35 +677,29 @@ mod tests {
     fn test_import_update_existing_subject() -> Result<()> {
         let mut conn = setup_db()?;
 
-        // 1. 第一次导入: Bob, Age=30
         let mut row1 = HashMap::new();
         row1.insert("age".to_string(), json!(30));
         DataService::import_row(&mut conn, "Bob", row1)?;
 
-        // 2. 第二次导入: Bob, Age=31 (变了), City=NY (新增)
         let mut row2 = HashMap::new();
         row2.insert("age".to_string(), json!(31));
         row2.insert("city".to_string(), json!("NY"));
         DataService::import_row(&mut conn, "Bob", row2)?;
 
         let subjects = DataService::search_subjects(&conn, Some("Bob"), 1, 1)?;
-        let bob = &subjects[0]; // 先获取 Vec，再取第 0 个元素的引用
+        let bob = &subjects[0];
 
-        // Age 应该更新为 31
         assert_eq!(bob.attributes.get("age"), Some(&json!(31)));
-        // City 应该存在
         assert_eq!(bob.attributes.get("city"), Some(&json!("NY")));
 
-        // 验证日志: 应该有 UPDATE 记录记录了 Age 的变化
         let logs: Vec<String> = conn
             .prepare(
                 "SELECT field_key FROM change_log WHERE action_type = 'IMPORT_UPDATE' ORDER BY id",
             )?
             .query_map([], |r| r.get(0))?
-            .collect::<Result<Vec<_>, _>>()?; // rusqlite Result转换
+            .collect::<Result<Vec<_>, _>>()?;
 
         assert!(logs.contains(&"age".to_string()));
-        // 注意: city 是新字段插入，视具体逻辑可能记为 UPDATE 或仅在 attributes 增加，这里 ops 实现是 diff 逻辑，所以 nil -> "NY" 也会被记录
         assert!(logs.contains(&"city".to_string()));
 
         Ok(())
@@ -626,8 +708,6 @@ mod tests {
     #[test]
     fn test_manual_update_fields() -> Result<()> {
         let mut conn = setup_db()?;
-
-        // 初始化数据
         DataService::import_row(
             &mut conn,
             "Charlie",
@@ -637,14 +717,12 @@ mod tests {
         let subjects = DataService::search_subjects(&conn, Some("Charlie"), 1, 1)?;
         let charlie_id = subjects[0].id;
 
-        // 执行手动修改 (PATCH)
         let mut updates = HashMap::new();
-        updates.insert("score".to_string(), json!(95)); // 修改
-        updates.insert("status".to_string(), json!("Active")); // 新增
+        updates.insert("score".to_string(), json!(95));
+        updates.insert("status".to_string(), json!("Active"));
 
         DataService::update_fields(&mut conn, charlie_id, updates)?;
 
-        // 验证
         let subjects_updated = DataService::search_subjects(&conn, None, 1, 10)?;
         let charlie = &subjects_updated[0];
         assert_eq!(charlie.attributes.get("score"), Some(&json!(95)));
@@ -662,20 +740,18 @@ mod tests {
         DataService::import_row(&mut conn, "User_B", HashMap::new())?; // ID 2
         DataService::import_row(&mut conn, "User_C", HashMap::new())?; // ID 3
 
-        // 稍微 Sleep 保证 updated_at 不同 (SQLite 时间精度可能不够，如果不Sleep排序可能不稳定)
-        // 但这里我们主要测试 limit/offset 逻辑
+        // SQL 是 ORDER BY name ASC (A -> B -> C)
 
-        // 测试 1: 搜索全部，分页 Page 1, Size 2
+        // 测试 1: 搜索全部，分页 Page 1, Size 2 (Offset 0) -> 应该得到 A, B
         let page1 = DataService::search_subjects(&conn, None, 1, 2)?;
         assert_eq!(page1.len(), 2);
-        // 默认按 updated_at DESC，所以应该是 C 和 B
-        assert_eq!(page1[0].name, "User_C");
+        assert_eq!(page1[0].name, "User_A");
         assert_eq!(page1[1].name, "User_B");
 
-        // 测试 2: 分页 Page 2, Size 2
+        // 测试 2: 分页 Page 2, Size 2 (Offset 2) -> 应该得到 C
         let page2 = DataService::search_subjects(&conn, None, 2, 2)?;
         assert_eq!(page2.len(), 1);
-        assert_eq!(page2[0].name, "User_A");
+        assert_eq!(page2[0].name, "User_C");
 
         // 测试 3: 关键词搜索
         let search_res = DataService::search_subjects(&conn, Some("User_B"), 1, 10)?;
@@ -689,7 +765,6 @@ mod tests {
     fn test_undo_functionality() -> Result<()> {
         let mut conn = setup_db()?;
 
-        // 1. 创建 Dave, Level=1
         DataService::import_row(
             &mut conn,
             "Dave",
@@ -697,33 +772,26 @@ mod tests {
         )?;
         let dave_id = DataService::search_subjects(&conn, Some("Dave"), 1, 1)?[0].id;
 
-        // 2. 修改 Level 1 -> 2
         DataService::update_fields(
             &mut conn,
             dave_id,
             HashMap::from([("level".to_string(), json!(2))]),
         )?;
 
-        // 确认修改成功
         let dave_v2 = &DataService::search_subjects(&conn, Some("Dave"), 1, 1)?[0];
         assert_eq!(dave_v2.attributes.get("level"), Some(&json!(2)));
 
-        // 3. 第一次撤销：撤销修改 (Level 2 -> 1)
         let success = DataService::undo_last_change(&mut conn, dave_id)?;
-        assert!(success, "Undo Update should return true");
+        assert!(success);
 
-        // 确认回退到了 Level 1
         let dave_v1 = &DataService::search_subjects(&conn, Some("Dave"), 1, 1)?[0];
         assert_eq!(dave_v1.attributes.get("level"), Some(&json!(1)));
 
-        // 4. 第二次撤销：撤销创建 (应该成功，并删除用户)
-        // 【修改点】：这里逻辑变了，现在支持撤销创建，所以应该返回 true
         let success_create_undo = DataService::undo_last_change(&mut conn, dave_id)?;
-        assert!(success_create_undo, "Undo Create should return true");
+        assert!(success_create_undo);
 
-        // 5. 验证 Dave 已经被删除了
         let res = DataService::search_subjects(&conn, Some("Dave"), 1, 1)?;
-        assert_eq!(res.len(), 0, "Dave should be deleted after undoing create");
+        assert_eq!(res.len(), 0);
 
         Ok(())
     }
@@ -732,7 +800,6 @@ mod tests {
     fn test_field_definitions_sync() -> Result<()> {
         let mut conn = setup_db()?;
 
-        // 导入包含不同 Key 的数据
         DataService::import_row(
             &mut conn,
             "User1",
@@ -746,15 +813,12 @@ mod tests {
             &mut conn,
             "User2",
             HashMap::from([
-                ("phone".to_string(), json!("456")),      // 重复 key
-                ("address".to_string(), json!("Street")), // 新 key
+                ("phone".to_string(), json!("456")),
+                ("address".to_string(), json!("Street")),
             ]),
         )?;
 
-        // 获取所有 Header
         let headers = DataService::get_all_headers(&conn)?;
-
-        // 应该是去重并排序后的结果
         assert_eq!(headers, vec!["address", "email", "phone"]);
 
         Ok(())
@@ -766,11 +830,8 @@ mod tests {
         DataService::import_row(&mut conn, "Deadpool", HashMap::new())?;
 
         let id = DataService::search_subjects(&conn, Some("Deadpool"), 1, 1)?[0].id;
-
-        // 删除
         DataService::delete_subject(&mut conn, id)?;
 
-        // 验证查不到了
         let res = DataService::search_subjects(&conn, Some("Deadpool"), 1, 1)?;
         assert_eq!(res.len(), 0);
 
@@ -780,7 +841,6 @@ mod tests {
     #[test]
     fn test_global_field_delete() -> Result<()> {
         let mut conn = setup_db()?;
-        // 插入两人，都有 age
         DataService::import_row(
             &mut conn,
             "A",
@@ -792,14 +852,11 @@ mod tests {
             HashMap::from([("age".to_string(), json!(30))]),
         )?;
 
-        // 全局删除 age
         DataService::delete_field_globally(&mut conn, "age")?;
 
-        // 验证 A 的 age 没了
         let a = &DataService::search_subjects(&conn, Some("A"), 1, 1)?[0];
         assert_eq!(a.attributes.get("age"), None);
 
-        // 验证定义表里也没了
         let headers = DataService::get_all_headers(&conn)?;
         assert!(!headers.contains(&"age".to_string()));
 
@@ -809,18 +866,127 @@ mod tests {
     #[test]
     fn test_undo_create() -> Result<()> {
         let mut conn = setup_db()?;
-
-        // 1. 创建 user
         DataService::import_row(&mut conn, "MistakeUser", HashMap::new())?;
         let id = DataService::search_subjects(&conn, Some("MistakeUser"), 1, 1)?[0].id;
 
-        // 2. 撤销 (此时最后一条日志是 CREATE)
         let success = DataService::undo_last_change(&mut conn, id)?;
         assert!(success);
 
-        // 3. 验证用户消失了
         let res = DataService::search_subjects(&conn, Some("MistakeUser"), 1, 1)?;
         assert_eq!(res.len(), 0);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_complex_search_combinations() -> Result<()> {
+        let mut conn = setup_db()?;
+
+        // 准备数据
+        let mut row1 = HashMap::new();
+        row1.insert("age".to_string(), json!(25));
+        row1.insert("city".to_string(), json!("Beijing"));
+        row1.insert("role".to_string(), json!("Dev"));
+        DataService::import_row(&mut conn, "Alice", row1)?;
+
+        let mut row2 = HashMap::new();
+        row2.insert("age".to_string(), json!(35));
+        row2.insert("city".to_string(), json!("Shanghai"));
+        row2.insert("role".to_string(), json!("Manager"));
+        DataService::import_row(&mut conn, "Bob", row2)?;
+
+        let mut row3 = HashMap::new();
+        row3.insert("age".to_string(), json!(28));
+        row3.insert("city".to_string(), json!("Beijing"));
+        row3.insert("role".to_string(), json!("Manager"));
+        DataService::import_row(&mut conn, "Charlie", row3)?;
+
+        // 测试 1: 组合查询 (北京的 Manager)
+        // 语法: city:Beijing role:Manager
+        let res1 = DataService::search_subjects(&conn, Some("city:Beijing role:Manager"), 1, 10)?;
+        assert_eq!(res1.len(), 1);
+        assert_eq!(res1[0].name, "Charlie");
+
+        // 测试 2: 范围 + 精确匹配 (年龄大于 30)
+        // 语法: age:>30
+        let res2 = DataService::search_subjects(&conn, Some("age:>30"), 1, 10)?;
+        assert_eq!(res2.len(), 1);
+        assert_eq!(res2[0].name, "Bob");
+
+        // 测试 3: 范围区间 (20到30岁之间)
+        // 语法: age:20..30
+        let res3 = DataService::search_subjects(&conn, Some("age:20..30"), 1, 10)?;
+        assert_eq!(res3.len(), 2); // Alice(25), Charlie(28)
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_special_characters_and_security() -> Result<()> {
+        let mut conn = setup_db()?;
+
+        // 1. 测试 SQL 注入风险字符 (单引号)
+        // 如果代码没有正确使用 prepared statement，这里会报错或由注入产生异常
+        let name_with_quote = "O'Neil";
+        DataService::import_row(&mut conn, name_with_quote, HashMap::new())?;
+
+        let res = DataService::search_subjects(&conn, Some("O'Neil"), 1, 10)?;
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].name, "O'Neil");
+
+        // 2. 测试 Emoji 和特殊符号
+        let name_emoji = "User🚀";
+        DataService::import_row(&mut conn, name_emoji, HashMap::new())?;
+
+        let res_emoji = DataService::search_subjects(&conn, Some("🚀"), 1, 10)?;
+        assert_eq!(res_emoji.len(), 1);
+        assert_eq!(res_emoji[0].name, "User🚀");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_edge_case_inputs() -> Result<()> {
+        let mut conn = setup_db()?;
+
+        // 1. 批量导入空数组 (不应报错，应返回 0)
+        let count = DataService::batch_import(&mut conn, vec![], "name")?;
+        assert_eq!(count, 0);
+
+        // 2. 分页越界 (第 999 页，应返回空 Vec，不报错)
+        DataService::import_row(&mut conn, "A", HashMap::new())?;
+        let res = DataService::search_subjects(&conn, None, 999, 10)?;
+        assert_eq!(res.len(), 0);
+
+        // 3. 搜索非法数字 (age:abc)
+        // 系统应足够健壮，将其视为字符串搜索而不是 Panic
+        let res_invalid = DataService::search_subjects(&conn, Some("age:abc"), 1, 10)?;
+        assert_eq!(res_invalid.len(), 0);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_json_types_handling() -> Result<()> {
+        let mut conn = setup_db()?;
+
+        let mut row = HashMap::new();
+        row.insert("is_active".to_string(), json!(true)); // Boolean
+        row.insert("meta".to_string(), Value::Null); // Null
+        row.insert("tags".to_string(), json!(["rust", "db"])); // Array
+
+        DataService::import_row(&mut conn, "DataUser", row)?;
+
+        let subjects = DataService::search_subjects(&conn, Some("DataUser"), 1, 1)?;
+        let attrs = &subjects[0].attributes;
+
+        assert_eq!(attrs.get("is_active"), Some(&json!(true)));
+        assert_eq!(attrs.get("meta"), Some(&Value::Null));
+
+        // 验证数组是否被正确序列化和反序列化
+        let tags = attrs.get("tags").unwrap().as_array().unwrap();
+        assert_eq!(tags.len(), 2);
+        assert_eq!(tags[0], "rust");
 
         Ok(())
     }
