@@ -1,10 +1,7 @@
 use gpui::{prelude::FluentBuilder, *};
 use gpui_component::{ActiveTheme, Icon, IconName, StyledExt};
 
-use crate::ui::{
-    constants::APP_ROUNDING,
-    models::{GlobalAppState, Models},
-};
+use crate::ui::{constants::APP_ROUNDING, models::GlobalAppState};
 
 pub struct Header;
 

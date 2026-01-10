@@ -43,11 +43,18 @@ pub struct ImportPreviewState {
     pub is_importing: bool,
     /// Store the error msg during import
     pub import_error: Option<String>,
+    // ---------------------- Edit ----------------------------
     /// The unit point in table that is editing
     pub editing_cell: Option<(usize, String)>,
     /// Store current active `Input` state entity,
     /// if not store, the new `Input` will create in every render, which cause user cannot input
     pub active_input: Option<Entity<InputState>>,
+    /// Whether open the edit mode, true means the table item can modify
+    pub is_edit_mode_enabled: bool,
+    // ---------------------- Select --------------------------
+    /// Whether open the selection mode, true means the table item can select by user, default `false`
+    pub is_selection_mode_enabled: bool,
+    pub selected_rows: BTreeSet<usize>,
 }
 
 impl ImportPreviewState {
@@ -59,6 +66,44 @@ impl ImportPreviewState {
             import_error: None,
             editing_cell: None,
             active_input: None,
+            is_edit_mode_enabled: false,
+            is_selection_mode_enabled: false,
+            selected_rows: BTreeSet::new(),
+        }
+    }
+
+    /// 切换编辑模式
+    pub fn toggle_edit_mode(&mut self) {
+        self.is_edit_mode_enabled = !self.is_edit_mode_enabled;
+        // 如果关闭编辑模式，强行退出当前的编辑状态
+        if !self.is_edit_mode_enabled {
+            self.editing_cell = None;
+            self.active_input = None;
+        }
+    }
+
+    /// 切换选择模式
+    pub fn toggle_selection_mode(&mut self) {
+        self.is_selection_mode_enabled = !self.is_selection_mode_enabled;
+        // 如果开启选择模式且当前没选任何行，可以根据需求决定是否全选，或者留空
+        // 这里策略：保持 selected_rows 不变，或者清空
+    }
+
+    /// 切换某一行的选中状态
+    pub fn toggle_row_selection(&mut self, row_ix: usize) {
+        if self.selected_rows.contains(&row_ix) {
+            self.selected_rows.remove(&row_ix);
+        } else {
+            self.selected_rows.insert(row_ix);
+        }
+    }
+
+    /// 全选或取消全选
+    pub fn toggle_select_all(&mut self, total_rows: usize) {
+        if self.selected_rows.len() == total_rows {
+            self.selected_rows.clear();
+        } else {
+            self.selected_rows = (0..total_rows).collect();
         }
     }
 }
@@ -235,9 +280,38 @@ impl Models {
 
     // --- Action 2: 确认导入 (Preview -> DB) ---
     pub fn confirm_import(&mut self, cx: &mut Context<Self>) {
-        if let Some(data) = self.import_preview_state.import_preview_data.take() {
+        // 获取数据所有权
+        if let Some(mut data) = self.import_preview_state.import_preview_data.take() {
+            // 【关键修改】根据选择模式过滤数据
+            let final_data = if self.import_preview_state.is_selection_mode_enabled {
+                // 如果是选择模式，只保留被选中的行
+                // 技巧：使用 filter_map + index
+                let selected = &self.import_preview_state.selected_rows;
+                if selected.is_empty() {
+                    // 如果开启了选择模式但没选数据，这里可以选择报错或者什么都不做
+                    // 恢复数据的所有权以便重试
+                    self.import_preview_state.import_preview_data = Some(data);
+                    self.error_msg = Some("Please select at least one row".to_string());
+                    cx.notify();
+                    return;
+                }
+
+                data.into_iter()
+                    .enumerate()
+                    .filter(|(i, _)| selected.contains(i))
+                    .map(|(_, row)| row)
+                    .collect()
+            } else {
+                // 默认全量导入
+                data
+            };
+
             self.import_preview_state.is_importing = true;
-            self.import_preview_state.show_import_modal = false; // 关闭弹窗
+            self.import_preview_state.show_import_modal = false;
+            // 重置状态
+            self.import_preview_state.is_edit_mode_enabled = false;
+            self.import_preview_state.is_selection_mode_enabled = false;
+            self.import_preview_state.selected_rows.clear();
             cx.notify();
 
             let db = self.db_manager.clone();
@@ -247,24 +321,23 @@ impl Models {
                     .background_executor()
                     .spawn(async move {
                         let mut conn = db.get_conn()?;
-                        // 假设 Excel 里的主键列名叫 "name" (实际可以做成 UI 可选)
-                        // todo! 主列做成ui可选，当前做成 “姓名”
-                        crate::backend::db::ops::DataService::batch_import(&mut conn, data, "姓名")
+                        crate::backend::db::ops::DataService::batch_import(
+                            &mut conn, final_data, "姓名",
+                        )
                     })
                     .await;
 
+                // ... (回调处理保持不变)
                 this.update(cx, |model, cx| {
                     model.import_preview_state.is_importing = false;
                     match result {
                         Ok(count) => {
-                            println!("Successfully imported {} rows", count);
-                            // 导入成功后，刷新列表 (重新加载第一页)
+                            // ... 成功逻辑
                             model.fetch_page(cx, true);
                         }
                         Err(e) => {
-                            model.import_preview_state.import_error =
-                                Some(format!("DB Import failed: {}", e));
-                            // 如果失败，可以考虑重新打开模态框让用户重试，或者只显示错误
+                            // ... 失败逻辑
+                            model.import_preview_state.import_error = Some(e.to_string());
                         }
                     }
                 })
