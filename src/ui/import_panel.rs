@@ -1,7 +1,7 @@
 use std::{cmp::Ordering, collections::HashMap};
 
 use gpui::{
-    App, AppContext, BorrowAppContext, Context, Entity, InteractiveElement, IntoElement,
+    App, AppContext, BorrowAppContext, Context, Entity, Focusable, InteractiveElement, IntoElement,
     MouseButton, ParentElement, Render, Styled, Subscription, Window, div, px,
 };
 use gpui_component::{
@@ -18,31 +18,22 @@ use crate::ui::models::{GlobalAppState, Models};
 
 // =============================================================================
 //  1. Table Delegate (Data Adapter)
-//  Responsible for telling the table: how much data, headers, sorting, and rendering.
-//  It is stateless regarding data; it fetches directly from GlobalAppState.
 // =============================================================================
 
 #[derive(Debug, Clone)]
 pub struct PreviewDelegate {
-    /// Table header define, including the first col "#"
     headers: Vec<String>,
-    /// columns conf
     columns: Vec<Column>,
 }
 
 impl PreviewDelegate {
-    /// Create a new adapter
-    ///
-    /// * `data_sample` - Used only to extract header keys, does not store data itself
     pub fn new(data_sample: Option<&HashMap<String, Value>>) -> Self {
-        // 1. Extract raw keys
         let mut raw_keys: Vec<String> = if let Some(row) = data_sample {
             row.keys().cloned().collect()
         } else {
             vec![]
         };
 
-        // 2.Sort Keys (Name first, others alphabetically)
         raw_keys.sort_by(|a, b| {
             if a == "姓名" {
                 Ordering::Less
@@ -53,28 +44,23 @@ impl PreviewDelegate {
             }
         });
 
-        // 3. Construct header list: ["#", "姓名", "Age", ...]
         let mut headers = vec!["#".to_string()];
         headers.extend(raw_keys);
 
-        // 4. Construct Column configs
         let columns = headers
             .iter()
             .map(|col_name| {
                 if col_name == "#" {
-                    // === Index Column Config ===
                     Column::new("index", "#")
-                        .width(px(50.0)) // 窄一点
-                        .fixed_left() // 固定在最左
-                        .movable(false) // 不可移动
+                        .width(px(50.0))
+                        .fixed_left()
+                        .movable(false)
                 } else if col_name == "姓名" {
-                    // === Core Data Column Config ===
                     Column::new(col_name, col_name)
                         .width(px(120.0))
-                        .fixed_left() // 姓名也固定
+                        .fixed_left()
                         .movable(false)
                 } else {
-                    // === Normal Column Config ===
                     Column::new(col_name, col_name)
                         .width(px(120.0))
                         .movable(false)
@@ -85,13 +71,12 @@ impl PreviewDelegate {
         Self { headers, columns }
     }
 
-    /// Helper Fun: Format JSON Value to displayable String
     fn format_value(v: Option<&Value>) -> String {
         match v {
             Some(Value::String(s)) => s.clone(),
             Some(Value::Number(n)) => n.to_string(),
             Some(Value::Bool(b)) => b.to_string(),
-            Some(Value::Null) | None => "-".to_string(), // 空值显示横杠
+            Some(Value::Null) | None => "-".to_string(),
             Some(v) => v.to_string(),
         }
     }
@@ -120,10 +105,9 @@ impl TableDelegate for PreviewDelegate {
         &mut self,
         row_ix: usize,
         col_ix: usize,
-        window: &mut gpui::Window,
+        _window: &mut gpui::Window, // Note: We use window in mouse handler, not directly here
         cx: &mut Context<gpui_component::table::TableState<Self>>,
     ) -> impl IntoElement {
-        // Define header_names
         let header_name = &self.headers[col_ix];
 
         // === Scenario 1: Index Column (#) ===
@@ -134,7 +118,7 @@ impl TableDelegate for PreviewDelegate {
                 .flex()
                 .items_center()
                 .justify_center()
-                .bg(cx.theme().colors.secondary) // 稍微灰一点的背景
+                .bg(cx.theme().colors.secondary)
                 .child(
                     div()
                         .text_sm()
@@ -145,7 +129,6 @@ impl TableDelegate for PreviewDelegate {
         }
 
         // === Scenario 2: Data Column ===
-        // 2.1 Fetch Data directly from Global
         let global_handle = cx.global::<GlobalAppState>().0.clone();
         let global_read = global_handle.read(cx);
 
@@ -153,36 +136,35 @@ impl TableDelegate for PreviewDelegate {
             .import_preview_state
             .import_preview_data
             .as_ref();
+
         if data_opt.is_none() {
             return div().into_any_element();
         }
-        let row_data = &data_opt.unwrap()[row_ix];
 
-        // Get current cell value string
+        let row_data = &data_opt.unwrap()[row_ix];
         let cell_value = Self::format_value(row_data.get(header_name));
 
-        // 2.2 Check if currently editing
+        // Check editing state
         let is_editing = match &global_read.import_preview_state.editing_cell {
             Some((r, k)) => *r == row_ix && k == header_name,
             None => false,
         };
 
-        // 2.3 Rendering Logic Branch
         if is_editing {
-            // ============ 编辑模式 ============
-            // 此时 Global 中应该已经有 active_input 了（由 ImportPanel 创建）
+            // === Edit Mode ===
+            // Display Input if it exists in Global
             if let Some(input_entity) = &global_read.import_preview_state.active_input {
                 div()
                     .size_full()
-                    // 严格遵循文档：View 渲染时不处理事件，只传入 InputState 实体
                     .child(Input::new(input_entity))
                     .into_any_element()
             } else {
-                div().child("Loading input...").into_any_element()
+                div().child("Initializing...").into_any_element()
             }
         } else {
-            // ============ 查看模式 ============
+            // === View Mode ===
             let header_clone = header_name.clone();
+            let cell_value_clone = cell_value.clone();
 
             div()
                 .size_full()
@@ -190,18 +172,26 @@ impl TableDelegate for PreviewDelegate {
                 .flex()
                 .items_center()
                 .cursor(gpui::CursorStyle::IBeam)
-                // 双击触发：只修改 Global 状态，不创建 View
-                .on_mouse_down(MouseButton::Left, move |e, _win, cx| {
+                // Double Click to Edit
+                .on_mouse_down(MouseButton::Left, move |e, window, cx| {
                     if e.click_count >= 2 {
                         cx.stop_propagation();
-                        cx.update_global::<GlobalAppState, _>(|app, cx| {
-                            app.0.update(cx, |model: &mut Models, cx| {
-                                // 1. 设置编辑坐标
-                                model.import_preview_state.editing_cell =
-                                    Some((row_ix, header_clone.clone()));
-                                // 2. 通知 ImportPanel (观察者)，让它去创建 InputState 并订阅事件
-                                cx.notify();
-                            });
+
+                        // 1. Create InputState (requires Window access)
+                        let input_entity = cx.new(|cx| {
+                            let mut s = InputState::new(window, cx);
+                            s.set_value(cell_value_clone.clone(), window, cx);
+                            s.focus_handle(cx).focus(window); // Auto focus
+                            s
+                        });
+
+                        // 2. Update Global State
+                        // We use the captured global_handle
+                        global_handle.update(cx, |models, cx| {
+                            models.import_preview_state.editing_cell =
+                                Some((row_ix, header_clone.clone()));
+                            models.import_preview_state.active_input = Some(input_entity);
+                            cx.notify();
                         });
                     }
                 })
@@ -221,7 +211,6 @@ impl TableDelegate for PreviewDelegate {
 
 pub struct ImportPanel {
     table_state: Entity<TableState<PreviewDelegate>>,
-    // 保存 InputState 的事件订阅，防止被 Drop
     input_subscription: Option<Subscription>,
     subscribed_input_id: Option<gpui::EntityId>,
 }
@@ -244,9 +233,9 @@ impl ImportPanel {
         let table_state = cx.new(|cx| TableState::new(delegate, window, cx));
 
         cx.new(|cx| {
-            // [Fix]: 这个闭包只捕获 global_handle，绝不捕获 window
+            // Observe global changes to handle input subscriptions
             cx.observe(&global_handle, move |this: &mut Self, model, cx| {
-                this.check_edit_state(model, cx);
+                this.ensure_subscription(model, cx);
                 cx.notify();
             })
             .detach();
@@ -259,59 +248,51 @@ impl ImportPanel {
         })
     }
 
-    // 辅助方法：检查编辑状态并创建 Input
-    fn check_edit_state(&mut self, model: Entity<GlobalAppState>, cx: &mut Context<Self>) {
-        let model = model.read(cx);
-        let state = &model.0.import_preview_state;
+    /// Checks if there is an active input and ensures we are subscribed to its events.
+    fn ensure_subscription(&mut self, model: Entity<Models>, cx: &mut Context<Self>) {
+        // 1. 第一步：在一个独立的作用域内读取数据并克隆所需的实体
+        // 这样做是为了让 model.read(cx) 产生的不可变借用在这里就结束
+        let (active_input, edit_info) = {
+            let model_read = model.read(cx);
+            let state = &model_read.import_preview_state;
 
-        if let Some((row_ix, key)) = &state.editing_cell {
-            if state.active_input.is_none() {
-                // 1. 获取值
-                let data = state.import_preview_data.as_ref().unwrap();
-                let initial_val = PreviewDelegate::format_value(data[*row_ix].get(key));
-                let key_clone = key.clone();
-                let row_ix_clone = *row_ix;
+            if let Some(input_entity) = &state.active_input {
+                let info = state.editing_cell.as_ref().map(|(r, k)| (*r, k.clone()));
+                (Some(input_entity.clone()), info)
+            } else {
+                (None, None)
+            }
+        }; // <--- model_read 在这里被 Drop，cx 的借用被释放
 
-                // 2. 创建 InputState (使用 ViewContext)
-                // [Fix]: 这里的 cx 是 ViewContext<ImportPanel>，它可以转化为 AppContext 用于 InputState::new
-                let input_state = cx.new(|cx| {
-                    let mut s = InputState::new(cx); // [Fix]: 移除了 window 参数，InputState 应该支持只传 cx
-                    s.set_value(initial_val);
-                    // s.focus_handle(cx).focus(cx); // [注意]: ViewContext下可能无法直接 focus，或者需要 window。
-                    // 如果 InputState::new 必须 window，那我们在 observe 里确实做不到。
-                    // 幸好 gpui-component 0.5 的 InputState::new(cx) 是存在的。
-                    s
-                });
+        // 2. 第二步：使用克隆的数据进行订阅操作，此时 cx 可以被 mut 借用
+        if let Some(input_entity) = active_input {
+            let input_id = input_entity.entity_id();
 
-                // 3. 订阅事件
-                let sub = cx.subscribe(&input_state, move |this, state, event, cx| match event {
-                    InputEvent::Change => {
-                        let new_val = state.read(cx).value().to_string();
-                        this.update_global_cell(cx, row_ix_clone, &key_clone, new_val);
-                    }
-                    InputEvent::PressEnter { .. } => this.finish_editing(cx),
-                    InputEvent::Blur => this.finish_editing(cx),
-                    _ => {}
-                });
+            // 如果订阅的 ID 变了，或者之前没有订阅
+            if self.subscribed_input_id != Some(input_id) {
+                if let Some((row_ix, key)) = edit_info {
+                    // 这里的 cx 是可用的
+                    let sub =
+                        cx.subscribe(&input_entity, move |this, state, event, cx| match event {
+                            InputEvent::Change => {
+                                let new_val = state.read(cx).value();
+                                this.update_global_cell(cx, row_ix, &key, new_val.to_string());
+                            }
+                            InputEvent::PressEnter { .. } | InputEvent::Blur => {
+                                this.finish_editing(cx);
+                            }
+                            _ => {}
+                        });
 
-                self.input_subscription = Some(sub);
-                self.subscribed_input_id = Some(input_state.entity_id());
-
-                // 4. 更新 Global
-                let input_entity = input_state.clone();
-                cx.update_global::<GlobalAppState, _>(|app, cx| {
-                    app.0.update(cx, |m: &mut Models, cx| {
-                        m.import_preview_state.active_input = Some(input_entity);
-                        // 注意：这里可能会触发递归 observe，但因为 active_input 有值了，会跳过创建逻辑
-                        cx.notify();
-                    });
-                });
+                    self.input_subscription = Some(sub);
+                    self.subscribed_input_id = Some(input_id);
+                }
             }
         } else {
-            // 清理订阅
-            if this.input_subscription.is_some() {
-                this.input_subscription = None;
-                this.subscribed_input_id = None;
+            // 没有活动的输入框，清理订阅
+            if self.input_subscription.is_some() {
+                self.input_subscription = None;
+                self.subscribed_input_id = None;
             }
         }
     }
@@ -358,8 +339,7 @@ impl Render for ImportPanel {
             .flex()
             .items_center()
             .justify_center()
-            // 在卡片层拦截点击，防止穿透
-            // 点击遮罩层退出编辑
+            // Click mask to close/cancel (optional, currently just stops propagation)
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .child(
                 v_flex()
@@ -396,17 +376,12 @@ impl Render for ImportPanel {
                     )
                     // --- Table Area ---
                     .child(
-                        div()
-                            .flex_1()
-                            .size_full()
-                            // 🔥 强制 flex 子元素不溢出，防止覆盖 Footer
-                            .min_h(px(0.0))
-                            .child(
-                                Table::new(&self.table_state)
-                                    .stripe(true)
-                                    .bordered(true)
-                                    .scrollbar_visible(true, true),
-                            ),
+                        div().flex_1().size_full().min_h(px(0.0)).child(
+                            Table::new(&self.table_state)
+                                .stripe(true)
+                                .bordered(true)
+                                .scrollbar_visible(true, true),
+                        ),
                     )
                     // --- Footer Buttons ---
                     .child(
