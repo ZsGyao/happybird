@@ -435,6 +435,7 @@ impl ImportPanel {
 
     fn render_toolbar_button(
         &self,
+        id: &str, // Add explicit ID parameter
         label: &str,
         active: bool,
         icon_char: &str,
@@ -444,7 +445,7 @@ impl ImportPanel {
     ) -> impl IntoElement {
         let theme = cx.theme();
         div()
-            .id("import_button")
+            .id(SharedString::from(id.to_string())) // Explicitly set ID here
             .flex()
             .items_center()
             .gap(px(6.0))
@@ -565,6 +566,7 @@ impl Render for ImportPanel {
                                     .gap(px(12.0))
                                     .items_center()
                                     .child(self.render_toolbar_button(
+                                        "toggle-edit-mode-btn", // Unique ID
                                         if is_edit { "Editing" } else { "Read Only" },
                                         is_edit,
                                         if is_edit { "🔓" } else { "🔒" },
@@ -579,6 +581,7 @@ impl Render for ImportPanel {
                                         },
                                     ))
                                     .child(self.render_toolbar_button(
+                                        "toggle-select-mode-btn", // Unique ID
                                         if is_select {
                                             "Selection On"
                                         } else {

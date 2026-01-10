@@ -85,6 +85,7 @@ impl ImportPreviewState {
     /// 切换选择模式
     pub fn toggle_selection_mode(&mut self) {
         self.is_selection_mode_enabled = !self.is_selection_mode_enabled;
+        println!("##### toggle_selection_mode click");
         // 如果开启选择模式且当前没选任何行，可以根据需求决定是否全选，或者留空
         // 这里策略：保持 selected_rows 不变，或者清空
     }
