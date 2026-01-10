@@ -1,9 +1,7 @@
-use std::time::Duration;
-
 use crate::ui::hb_icons::HappyBirdIcons;
 use crate::ui::models::GlobalAppState;
 use crate::zlog::log_impl::debug;
-use gpui::{App, AppContext, Context, Entity, Render, Subscription, Task, WeakEntity, Window};
+use gpui::{App, AppContext, Context, Entity, Render, Subscription, Window};
 use gpui_component::{
     Icon,
     input::{Input, InputEvent, InputState},

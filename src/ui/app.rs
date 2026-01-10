@@ -63,8 +63,8 @@ impl Render for WindowShadow {
         let show_about = cx.global::<GlobalAppState>().0.read(cx).show_about;
         // 1. 获取开关状态
         let global = cx.global::<GlobalAppState>().0.read(cx);
-        let show = global.show_import_modal;
-        let is_loading = global.is_importing; // 你可以在界面上根据这个显示个 Loading
+        let show = global.import_preview_state.show_import_modal;
+        let is_loading = global.import_preview_state.is_importing; // 你可以在界面上根据这个显示个 Loading
 
         // 2. 【核心逻辑】开关开了才创建，关了就销毁
         if show {

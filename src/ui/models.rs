@@ -5,12 +5,10 @@ use std::{
 // 【关键修正1】引入 prelude 和 AppContext trait，确保 cx.new 和 update 可用
 use anyhow::Result;
 use gpui::{App, Context, Entity, Global, prelude::*};
+use gpui_component::input::InputState;
 use serde_json::{Value, json};
 
-use crate::{
-    backend::db::{config::DbManager, models::Subject, ops::DataService},
-    debug,
-};
+use crate::backend::db::{config::DbManager, models::Subject, ops::DataService};
 
 pub struct Models {
     db_manager: Arc<DbManager>,
@@ -29,13 +27,40 @@ pub struct Models {
     pub selected_subject_id: Option<i32>,
     pub search_query: String,
 
-    // ------ 导入流程状态 --------
-    pub import_preview_data: Option<Vec<HashMap<String, Value>>>, // 暂存解析后的数据
-    pub show_import_modal: bool,                                  // 控制模态框显示
-    pub is_importing: bool,                                       // 控制导入过程中的 Loading 状态
-    pub import_error: Option<String>,
+    pub import_preview_state: ImportPreviewState,
 
     pub show_about: bool,
+}
+
+/// Import preview global data and state
+#[derive(Debug)]
+pub struct ImportPreviewState {
+    /// Temp store the prase data from import file
+    pub import_preview_data: Option<Vec<HashMap<String, Value>>>,
+    /// Contorl the import preview ui whether show
+    pub show_import_modal: bool,
+    /// Check the the file is importing
+    pub is_importing: bool,
+    /// Store the error msg during import
+    pub import_error: Option<String>,
+    /// The unit point in table that is editing
+    pub editing_cell: Option<(usize, String)>,
+    /// Store current active `Input` state entity,
+    /// if not store, the new `Input` will create in every render, which cause user cannot input
+    pub active_input: Option<Entity<InputState>>,
+}
+
+impl ImportPreviewState {
+    pub fn new() -> Self {
+        Self {
+            import_preview_data: None,
+            show_import_modal: false,
+            is_importing: false,
+            import_error: None,
+            editing_cell: None,
+            active_input: None,
+        }
+    }
 }
 
 impl Models {
@@ -56,10 +81,7 @@ impl Models {
             search_query: String::new(),
             show_about: false,
             total_count: 0,
-            import_preview_data: None,
-            show_import_modal: false,
-            is_importing: false,
-            import_error: None,
+            import_preview_state: ImportPreviewState::new(),
         }
     }
 
@@ -164,9 +186,23 @@ impl Models {
         self.dynamic_headers = set.into_iter().collect();
     }
 
+    /// Update specific cell data in the import preview
+    ///
+    /// * `row_ix` - Row index
+    /// * `key` - Column Key (Header name)
+    /// * `value` - New value string
+    pub fn update_cell_value(&mut self, row_ix: usize, key: &str, value: String) {
+        if let Some(data) = &mut self.import_preview_state.import_preview_data {
+            if let Some(row) = data.get_mut(row_ix) {
+                // 这里默认将所有输入视为 String，实际场景可尝试 parse 为 number/bool
+                row.insert(key.to_string(), serde_json::json!(value));
+            }
+        }
+    }
+
     // --- Action 1: 解析文件 (UI -> Backend) ---
     pub fn preview_file(&mut self, cx: &mut Context<Self>, path: std::path::PathBuf) {
-        self.is_importing = true; // 复用全局 loading 或使用 is_importing
+        self.import_preview_state.is_importing = true; // 复用全局 loading 或使用 is_importing
         cx.notify();
 
         cx.spawn(async move |this, cx| {
@@ -177,16 +213,17 @@ impl Models {
                 .await;
 
             this.update(cx, |model, cx| {
-                model.is_importing = false;
+                model.import_preview_state.is_importing = false;
                 match result {
                     Ok(data) => {
-                        model.import_preview_data = Some(data);
-                        debug!("{:?}", model.import_preview_data.clone().unwrap().first());
-                        model.show_import_modal = true; // 打开预览弹窗
-                        model.import_error = None;
+                        model.import_preview_state.import_preview_data = Some(data);
+                        // debug!("{:?}", model.import_preview_state.import_preview_data.clone().unwrap().first());
+                        model.import_preview_state.show_import_modal = true; // 打开预览弹窗
+                        model.import_preview_state.import_error = None;
                     }
                     Err(e) => {
-                        model.import_error = Some(format!("Parse failed: {}", e));
+                        model.import_preview_state.import_error =
+                            Some(format!("Parse failed: {}", e));
                     }
                 }
                 cx.notify();
@@ -198,9 +235,9 @@ impl Models {
 
     // --- Action 2: 确认导入 (Preview -> DB) ---
     pub fn confirm_import(&mut self, cx: &mut Context<Self>) {
-        if let Some(data) = self.import_preview_data.take() {
-            self.is_importing = true;
-            self.show_import_modal = false; // 关闭弹窗
+        if let Some(data) = self.import_preview_state.import_preview_data.take() {
+            self.import_preview_state.is_importing = true;
+            self.import_preview_state.show_import_modal = false; // 关闭弹窗
             cx.notify();
 
             let db = self.db_manager.clone();
@@ -217,7 +254,7 @@ impl Models {
                     .await;
 
                 this.update(cx, |model, cx| {
-                    model.is_importing = false;
+                    model.import_preview_state.is_importing = false;
                     match result {
                         Ok(count) => {
                             println!("Successfully imported {} rows", count);
@@ -225,7 +262,8 @@ impl Models {
                             model.fetch_page(cx, true);
                         }
                         Err(e) => {
-                            model.import_error = Some(format!("DB Import failed: {}", e));
+                            model.import_preview_state.import_error =
+                                Some(format!("DB Import failed: {}", e));
                             // 如果失败，可以考虑重新打开模态框让用户重试，或者只显示错误
                         }
                     }
@@ -238,9 +276,9 @@ impl Models {
 
     // --- Action 3: 取消导入 ---
     pub fn cancel_import(&mut self, cx: &mut Context<Self>) {
-        self.import_preview_data = None;
-        self.show_import_modal = false;
-        self.import_error = None;
+        self.import_preview_state.import_preview_data = None;
+        self.import_preview_state.show_import_modal = false;
+        self.import_preview_state.import_error = None;
         cx.notify();
     }
 

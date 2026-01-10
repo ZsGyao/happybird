@@ -5,8 +5,8 @@
 use std::{collections::HashSet, ops::Range};
 
 use gpui::{
-    App, AppContext, AsyncApp, AsyncWindowContext, Bounds, ClickEvent, Context, Div, Entity,
-    FocusHandle, InteractiveElement, IntoElement, ParentElement, PathPromptOptions, Pixels, Render,
+    App, AppContext, AsyncApp, Bounds, ClickEvent, Context, Div, Entity, FocusHandle,
+    InteractiveElement, IntoElement, ParentElement, PathPromptOptions, Pixels, Render,
     SharedString, Stateful, StatefulInteractiveElement, Styled, UniformListScrollHandle, Window,
     div, point, px, size, uniform_list,
 };
