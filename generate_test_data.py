@@ -5,7 +5,7 @@ import random
 import pandas as pd
 
 # =================配置区域=================
-NUM_ROWS = 1000  # 你想要生成的行数，建议 5000-10000 来测试性能
+NUM_ROWS = 10  # 你想要生成的行数，建议 5000-10000 来测试性能
 OUTPUT_FILE = "large_test_data.xlsx"
 # =========================================
 
@@ -84,6 +84,7 @@ data = {
     "绩效评分": [],
     "是否在职": [],
     "备注": [],
+    "薪水": [],
 }
 
 for i in range(NUM_ROWS):
@@ -98,6 +99,7 @@ for i in range(NUM_ROWS):
     # 90% 概率在职
     data["是否在职"].append(True if random.random() < 0.9 else False)
     data["备注"].append(random.choice(remarks_pool))
+    data["薪水"].append(round(random.uniform(4000.0, 100000.0), 1))
 
 df = pd.DataFrame(data)
 df.to_excel(OUTPUT_FILE, index=False)

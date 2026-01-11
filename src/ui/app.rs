@@ -10,6 +10,7 @@ use crate::{
         import_panel::ImportPanel,
         info_panel::InfoPanel,
         models::GlobalAppState,
+        test_ui::HappyBirdComponentTest,
         theme,
     },
 };
@@ -46,6 +47,7 @@ pub struct WindowShadow {
     pub header: Entity<Header>,
     pub info_panel: Entity<InfoPanel>,
     pub import_panel: Option<Entity<ImportPanel>>,
+    pub test_table: Entity<HappyBirdComponentTest>,
 }
 
 impl Render for WindowShadow {
@@ -61,6 +63,8 @@ impl Render for WindowShadow {
             window.bounds().size.width - APP_LEFT_PANEL_INIT_W - APP_RIGHT_PANEL_INIT_W;
 
         let show_about = cx.global::<GlobalAppState>().0.read(cx).show_about;
+        let show_test = cx.global::<GlobalAppState>().0.read(cx).show_test;
+
         // 1. 获取开关状态
         let global = cx.global::<GlobalAppState>().0.read(cx);
         let show = global.import_preview_state.show_import_modal;
@@ -265,7 +269,8 @@ impl Render for WindowShadow {
                     })
                     .when_some(self.import_panel.clone(), |this, panel| {
                         this.child(div().absolute().size_full().child(panel))
-                    }),
+                    })
+                    .when(show_test, |this| this.child(self.test_table.clone())),
             );
 
         let text_styles = element.text_style();
@@ -378,6 +383,7 @@ pub fn run() -> anyhow::Result<()> {
                     header: Header::new(cx),
                     info_panel: InfoPanel::new(window, cx),
                     import_panel: None,
+                    test_table: HappyBirdComponentTest::new(cx, window),
                 });
                 Root::new(view, window, cx)
             })

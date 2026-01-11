@@ -502,7 +502,11 @@ impl Render for ImportPanel {
             let new_delegate = PreviewDelegate::new(first_row, is_select, is_edit);
 
             // 2. 创建新的 TableState 并替换旧的 (需要 window 参数)
-            self.table_state = cx.new(|cx| TableState::new(new_delegate, window, cx));
+            self.table_state = cx.new(|cx| {
+                TableState::new(new_delegate, window, cx)
+                    .col_selectable(true)
+                    .row_selectable(true)
+            });
 
             // 3. 更新缓存记录
             self.last_selection_mode = is_select;

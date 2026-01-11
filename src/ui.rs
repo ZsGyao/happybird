@@ -10,4 +10,5 @@ pub mod indent_guides;
 pub mod info_panel;
 mod models;
 mod search;
+pub mod test_ui;
 mod theme;

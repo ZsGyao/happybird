@@ -441,6 +441,20 @@ impl Render for InfoPanel {
                                 div()
                                     .flex_1()
                                     .child(Button::new("Config").w_full().label("Config")),
+                            )
+                            .child(
+                                div().flex_1().child(
+                                    Button::new("Test Button")
+                                        .w_full()
+                                        .label("Test Button")
+                                        .on_click(|e, window: &mut Window, cx| {
+                                            println!("Test Button click");
+                                            let model = cx.global::<GlobalAppState>().0.clone();
+                                            model.update(cx, |val, _| {
+                                                val.show_test = !val.show_test;
+                                            })
+                                        }),
+                                ),
                             ),
                     ),
             )

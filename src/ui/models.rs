@@ -30,6 +30,9 @@ pub struct Models {
     pub import_preview_state: ImportPreviewState,
 
     pub show_about: bool,
+
+    // -------- just for test ---------------
+    pub show_test: bool,
 }
 
 /// Import preview global data and state
@@ -128,6 +131,7 @@ impl Models {
             show_about: false,
             total_count: 0,
             import_preview_state: ImportPreviewState::new(),
+            show_test: false,
         }
     }
 
