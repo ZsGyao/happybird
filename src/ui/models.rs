@@ -336,7 +336,7 @@ impl Models {
                 this.update(cx, |model, cx| {
                     model.import_preview_state.is_importing = false;
                     match result {
-                        Ok(count) => {
+                        Ok(_count) => {
                             // ... 成功逻辑
                             model.fetch_page(cx, true);
                         }

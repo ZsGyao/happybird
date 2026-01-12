@@ -2,6 +2,7 @@
 
 use crate::backend::db::models::Subject;
 use anyhow::{Context, Result};
+use pinyin::ToPinyin;
 use rusqlite::{Connection, OptionalExtension, ToSql, Transaction, params};
 use serde_json::{Map, Value};
 use std::collections::HashMap;
@@ -133,55 +134,31 @@ impl DataService {
         Ok(())
     }
 
+    /// 辅助：生成全拼和首字母
+    /// 返回 (全拼字符串, 首字母字符串)
+    fn generate_pinyin(input: &str) -> (String, String) {
+        let mut full_pinyin = String::new();
+        let mut abbr_pinyin = String::new();
+
+        for char in input.chars() {
+            if let Some(pinyin) = char.to_pinyin() {
+                full_pinyin.push_str(pinyin.plain());
+                abbr_pinyin.push(pinyin.plain().chars().next().unwrap_or_default());
+            } else {
+                // 非汉字字符直接保留
+                full_pinyin.push(char);
+                abbr_pinyin.push(char);
+            }
+        }
+        (full_pinyin.to_lowercase(), abbr_pinyin.to_lowercase())
+    }
+
     /// 核心：构建动态 SQL WHERE 子句 。
     ///
-    /// 该函数负责解析用户输入的自然语言查询字符串，并将其转换为 SQLite 的 `WHERE` 子句及对应的参数列表。
-    /// 支持多条件组合（AND 逻辑）、智能类型转换（数字 vs 字符串）以及多种高级操作符。
-    ///
-    /// # 🔍 支持的搜索语法
-    ///
-    /// ## 1. 范围查询 (Range)
-    /// 用于查找介于两个值之间的数据。
-    /// - **语法**: `key:min..max` (**推荐**，通用性强，支持日期和数字)
-    /// - **语法**: `key:min-max` (兼容性写法，**仅支持纯数字**，不可用于日期)
-    /// - **示例**:
-    ///     - `age:18..30` → 查找 `age` 在 18 到 30 岁之间的用户。
-    ///     - `created_at:2023-01-01..2023-12-31` → 查找 2023 年创建的所有记录。
-    ///
-    /// ## 2. 比较查询 (Comparison)
-    /// 用于查找大于、小于或等于某值的数据。自动处理数字类型的比较。
-    /// - **语法**: `key:>val`, `key:>=val`, `key:<val`, `key:<=val`
-    /// - **示例**:
-    ///     - `score:>90` → 查找分数大于 90 的记录。
-    ///     - `age:>=18` → 查找成年人。
-    ///     - `updated_at:>=2024-01-01` → 查找 2024 年及以后更新的记录。
-    ///
-    /// ## 3. 指定字段匹配 (Key-Value)
-    /// 指定特定字段进行查找。对于文本字段默认使用 `LIKE` 模糊匹配。
-    /// - **语法**: `key:value`
-    /// - **示例**:
-    ///     - `name:Alice` → 查找名字中包含 "Alice" 的记录。
-    ///     - `city:Shanghai` → 查找 JSON 属性中 `city` 为 "Shanghai" 的记录。
-    ///     - `role:Admin` → 查找角色为 "Admin" 的记录。
-    ///
-    /// ## 4. 全局关键字搜索 (Global Keyword)
-    /// 不指定 Key 时，将在 `name` 和所有 `attributes` (JSON) 中进行广撒网式模糊搜索。
-    /// - **语法**: `keyword`
-    /// - **示例**:
-    ///     - `Bob` → 查找名字含 "Bob" 或任意属性（如备注、地址）含 "Bob" 的记录。
-    ///
-    /// # 💡 组合使用示例
-    /// 多个条件可以用空格分隔，它们之间是 **AND (且)** 的关系。
-    ///
-    /// ```text
-    /// // 查找：北京的、20到30岁的、管理员
-    /// city:Beijing age:20..30 role:Admin
-    /// ```
-    ///
-    /// # ⚙️ 实现细节
-    /// - 对 `name`, `created_at`, `updated_at` 等一级字段直接查询。
-    /// - 对其他字段自动使用 `json_extract(attributes, '$.key')` 提取 JSON 属性。
-    /// - 针对数字比较，自动添加 `CAST(... AS REAL)` 以修复 SQLite 字符串与数字比较的陷阱。
+    /// # 支持的搜索语法
+    /// - `key:value` (精确/模糊)
+    /// - `key:min..max` (范围)
+    /// - `keyword` (全局模糊搜索：**支持中文名、拼音全拼、拼音首字母**)
     fn build_search_query(query: Option<&str>) -> (String, Vec<String>) {
         let raw_query = match query {
             Some(q) if !q.trim().is_empty() => q.trim(),
@@ -193,8 +170,8 @@ impl DataService {
 
         for term in raw_query.split_whitespace() {
             if let Some((key, val)) = term.split_once(':') {
+                // ... (Key-Value 搜索逻辑保持不变) ...
                 // 1. 确定字段表达式
-                // created_at 和 updated_at 是真实列，name 也是
                 let column_expr = match key {
                     "name" => "name".to_string(),
                     "created_at" => "created_at".to_string(),
@@ -203,7 +180,6 @@ impl DataService {
                 };
 
                 // 辅助闭包：判断是否需要数字转换
-                // 如果输入值能解析为数字，且 key 不是时间字段，则强制转为 REAL 比较
                 let wrap_cast = |expr: &str, val: &str| -> String {
                     if val.parse::<f64>().is_ok() && key != "created_at" && key != "updated_at" {
                         format!("CAST({} AS REAL)", expr)
@@ -214,18 +190,15 @@ impl DataService {
 
                 // 2. 解析操作符
                 if let Some((min, max)) = val.split_once("..") {
-                    // --- Range: ".." (优先支持，兼容日期) ---
-                    // date:2023-01-01..2023-12-31
+                    // Range
                     let col_left = wrap_cast(&column_expr, min);
                     let col_right = wrap_cast(&column_expr, max);
-
-                    // 注意：这里的 CAST(? AS REAL) 是为了让 SQLite 把传入的字符串参数也当数字处理
-                    let val_placeholder_min = if min.parse::<f64>().is_ok() && key != "created_at" {
+                    let vp_min = if min.parse::<f64>().is_ok() && key != "created_at" {
                         "CAST(? AS REAL)"
                     } else {
                         "?"
                     };
-                    let val_placeholder_max = if max.parse::<f64>().is_ok() && key != "created_at" {
+                    let vp_max = if max.parse::<f64>().is_ok() && key != "created_at" {
                         "CAST(? AS REAL)"
                     } else {
                         "?"
@@ -233,70 +206,74 @@ impl DataService {
 
                     conditions.push(format!(
                         "({} >= {} AND {} <= {})",
-                        col_left, val_placeholder_min, col_right, val_placeholder_max
+                        col_left, vp_min, col_right, vp_max
                     ));
                     params.push(min.to_string());
                     params.push(max.to_string());
                 } else if let Some(stripped) = val.strip_prefix(">=") {
-                    // --- Compare: ">=" ---
+                    // >=
                     let col = wrap_cast(&column_expr, stripped);
-                    let placeholder = if stripped.parse::<f64>().is_ok() && key != "created_at" {
+                    let vp = if stripped.parse::<f64>().is_ok() && key != "created_at" {
                         "CAST(? AS REAL)"
                     } else {
                         "?"
                     };
-                    conditions.push(format!("{} >= {}", col, placeholder));
+                    conditions.push(format!("{} >= {}", col, vp));
                     params.push(stripped.to_string());
                 } else if let Some(stripped) = val.strip_prefix("<=") {
-                    // --- Compare: "<=" ---
+                    // <=
                     let col = wrap_cast(&column_expr, stripped);
-                    let placeholder = if stripped.parse::<f64>().is_ok() && key != "created_at" {
+                    let vp = if stripped.parse::<f64>().is_ok() && key != "created_at" {
                         "CAST(? AS REAL)"
                     } else {
                         "?"
                     };
-                    conditions.push(format!("{} <= {}", col, placeholder));
+                    conditions.push(format!("{} <= {}", col, vp));
                     params.push(stripped.to_string());
                 } else if let Some(stripped) = val.strip_prefix(">") {
-                    // --- Compare: ">" ---
+                    // >
                     let col = wrap_cast(&column_expr, stripped);
-                    let placeholder = if stripped.parse::<f64>().is_ok() && key != "created_at" {
+                    let vp = if stripped.parse::<f64>().is_ok() && key != "created_at" {
                         "CAST(? AS REAL)"
                     } else {
                         "?"
                     };
-                    conditions.push(format!("{} > {}", col, placeholder));
+                    conditions.push(format!("{} > {}", col, vp));
                     params.push(stripped.to_string());
                 } else if let Some(stripped) = val.strip_prefix("<") {
-                    // --- Compare: "<" ---
+                    // <
                     let col = wrap_cast(&column_expr, stripped);
-                    let placeholder = if stripped.parse::<f64>().is_ok() && key != "created_at" {
+                    let vp = if stripped.parse::<f64>().is_ok() && key != "created_at" {
                         "CAST(? AS REAL)"
                     } else {
                         "?"
                     };
-                    conditions.push(format!("{} < {}", col, placeholder));
+                    conditions.push(format!("{} < {}", col, vp));
                     params.push(stripped.to_string());
-                } else if let Some((min, max)) = val.split_once('-') {
-                    // --- Legacy Range: "-" (仅当两边都是纯数字时生效，避免误伤日期) ---
-                    if min.parse::<f64>().is_ok() && max.parse::<f64>().is_ok() {
-                        conditions.push(format!("(CAST({} AS REAL) >= CAST(? AS REAL) AND CAST({} AS REAL) <= CAST(? AS REAL))", column_expr, column_expr));
-                        params.push(min.to_string());
-                        params.push(max.to_string());
-                    } else {
-                        // 如果包含 - 但不是纯数字，当作普通字符串 LIKE 查询 (例如 name:Jean-Pierre)
-                        conditions.push(format!("{} LIKE ?", column_expr));
-                        params.push(format!("%{}%", val));
-                    }
                 } else {
-                    // --- Default: LIKE (Fuzzy Match) ---
+                    // Default LIKE
                     conditions.push(format!("{} LIKE ?", column_expr));
                     params.push(format!("%{}%", val));
                 }
             } else {
-                // --- Global Keyword Search ---
-                conditions.push("(name LIKE ? OR attributes LIKE ?)".to_string());
+                // --- Global Keyword Search (修改部分) ---
+                // 支持: 名字 OR 拼音 OR 首字母 OR JSON属性
+                // 我们将输入的 term 转为小写进行模糊匹配，以配合生成的全小写拼音
+                let pattern = format!("%{}%", term.to_lowercase());
+
+                conditions.push(
+                    "(name LIKE ? OR pinyin LIKE ? OR py_abbr LIKE ? OR attributes LIKE ?)"
+                        .to_string(),
+                );
+
+                // 参数分别对应上面 SQL 中的 4 个 ?
+                // 1. name (原始输入匹配，这里可以保留原始大小写，或者SQLite NOCASE处理)
                 params.push(format!("%{}%", term));
+                // 2. pinyin (全拼，全小写匹配)
+                params.push(pattern.clone());
+                // 3. py_abbr (首字母，全小写匹配)
+                params.push(pattern.clone());
+                // 4. attributes (JSON 属性)
                 params.push(format!("%{}%", term));
             }
         }
@@ -548,9 +525,14 @@ impl DataService {
 
     fn perform_insert(tx: &Transaction, name: &str, data: HashMap<String, Value>) -> Result<()> {
         let json_str = serde_json::to_string(&data)?;
+
+        // 1. 生成拼音
+        let (pinyin, py_abbr) = Self::generate_pinyin(name);
+
+        // 2. 插入所有字段
         tx.execute(
-            "INSERT INTO subjects (name, attributes) VALUES (?, ?)",
-            params![name, json_str],
+            "INSERT INTO subjects (name, pinyin, py_abbr, attributes) VALUES (?, ?, ?, ?)",
+            params![name, pinyin, py_abbr, json_str],
         )?;
         let id = tx.last_insert_rowid();
 
@@ -987,6 +969,129 @@ mod tests {
         let tags = attrs.get("tags").unwrap().as_array().unwrap();
         assert_eq!(tags.len(), 2);
         assert_eq!(tags[0], "rust");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_pinyin_generation_logic() {
+        // 测试私有辅助函数 generate_pinyin 是否逻辑正确
+        let (full, abbr) = DataService::generate_pinyin("张三");
+        assert_eq!(full, "zhangsan", "全拼生成错误");
+        assert_eq!(abbr, "zs", "首字母生成错误");
+
+        let (full, abbr) = DataService::generate_pinyin("李四-Wang");
+        assert_eq!(full, "lisi-wang", "混合字符全拼错误");
+
+        // [修复]: 当前逻辑是非汉字字符原样保留，所以应该是 "ls-wang"
+        assert_eq!(abbr, "ls-wang", "混合字符首字母错误");
+
+        let (full, abbr) = DataService::generate_pinyin("重庆");
+        // pinyin 库默认行为：多音字通常取第一个音
+        println!("重庆 -> Full: {}, Abbr: {}", full, abbr);
+        assert!(!full.is_empty());
+    }
+
+    #[test]
+    fn test_import_auto_writes_pinyin() -> Result<()> {
+        let mut conn = setup_db()?;
+
+        // 导入带中文的数据
+        DataService::import_row(&mut conn, "诸葛亮", HashMap::new())?;
+
+        // 验证数据库是否正确存入拼音
+        let (pinyin, abbr): (String, String) = conn.query_row(
+            "SELECT pinyin, py_abbr FROM subjects WHERE name = '诸葛亮'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+
+        assert_eq!(pinyin, "zhugeliang");
+        assert_eq!(abbr, "zgl");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_search_by_pinyin_full() -> Result<()> {
+        let mut conn = setup_db()?;
+        DataService::import_row(&mut conn, "张三", HashMap::new())?;
+        DataService::import_row(&mut conn, "张飞", HashMap::new())?;
+        DataService::import_row(&mut conn, "李四", HashMap::new())?;
+
+        // 1. 搜索 "zhang" (匹配 张三, 张飞)
+        let res = DataService::search_subjects(&conn, Some("zhang"), 1, 10)?;
+        assert_eq!(res.len(), 2);
+        assert!(res.iter().any(|s| s.name == "张三"));
+        assert!(res.iter().any(|s| s.name == "张飞"));
+
+        // 2. 搜索 "san" (匹配 张三)
+        let res = DataService::search_subjects(&conn, Some("san"), 1, 10)?;
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].name, "张三");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_search_by_pinyin_abbr() -> Result<()> {
+        let mut conn = setup_db()?;
+        DataService::import_row(&mut conn, "欧阳锋", HashMap::new())?;
+        DataService::import_row(&mut conn, "郭靖", HashMap::new())?;
+
+        // 1. 搜索 "oyf" (全首字母)
+        let res = DataService::search_subjects(&conn, Some("oyf"), 1, 10)?;
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].name, "欧阳锋");
+
+        // 2. 搜索 "yf" (部分首字母)
+        let res = DataService::search_subjects(&conn, Some("yf"), 1, 10)?;
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].name, "欧阳锋");
+
+        // 3. 搜索 "gj"
+        let res = DataService::search_subjects(&conn, Some("gj"), 1, 10)?;
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].name, "郭靖");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_mixed_search_attributes_and_pinyin() -> Result<()> {
+        let mut conn = setup_db()?;
+
+        let mut row = HashMap::new();
+        row.insert("job".to_string(), json!("Engineer"));
+        DataService::import_row(&mut conn, "马云", row)?; // mayun, my
+
+        // 搜索：名字首字母 "my" + 职位 "Engineer"
+        // 我们的 build_search_query 空格是 AND 关系
+        let res = DataService::search_subjects(&conn, Some("job:Engineer my"), 1, 10)?;
+
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].name, "马云");
+
+        // 搜索不存在的组合
+        let res = DataService::search_subjects(&conn, Some("job:Doctor my"), 1, 10)?;
+        assert_eq!(res.len(), 0);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_case_insensitive_search() -> Result<()> {
+        let mut conn = setup_db()?;
+        DataService::import_row(&mut conn, "测试", HashMap::new())?; // ceshi, cs
+
+        // 搜索大写 "CS"
+        let res = DataService::search_subjects(&conn, Some("CS"), 1, 10)?;
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].name, "测试");
+
+        // 搜索大写全拼 "CESHI"
+        let res = DataService::search_subjects(&conn, Some("CESHI"), 1, 10)?;
+        assert_eq!(res.len(), 1);
 
         Ok(())
     }

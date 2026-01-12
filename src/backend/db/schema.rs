@@ -11,6 +11,8 @@ pub fn create_tables(conn: &Connection) -> Result<()> {
         "CREATE TABLE IF NOT EXISTS subjects (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             name        TEXT NOT NULL UNIQUE,
+            pinyin      TEXT NOT NULL DEFAULT '', -- 存储全拼 (如: zhangsan)
+            py_abbr     TEXT NOT NULL DEFAULT '', -- 存储首字母 (如: zs)
             attributes  TEXT NOT NULL DEFAULT '{}',
             created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP
