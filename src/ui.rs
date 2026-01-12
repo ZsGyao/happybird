@@ -3,6 +3,7 @@ pub mod app;
 mod assets;
 mod components;
 pub mod constants;
+pub mod detail_panel;
 mod hb_icons;
 mod header;
 pub mod import_panel;

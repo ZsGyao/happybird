@@ -6,7 +6,7 @@ use std::{
 use anyhow::Result;
 use gpui::{App, Context, Entity, Global, prelude::*};
 use gpui_component::input::InputState;
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 
 use crate::backend::db::{config::DbManager, models::Subject, ops::DataService};
 
@@ -36,6 +36,12 @@ pub struct Models {
     // ---------- IMPORT PANEL: import preview ----------------
     pub import_preview_state: ImportPreviewState,
 
+    // ---------- DETAIL PANEL: Tab Management ----------
+    /// 已打开的标签页列表
+    pub tabs: Vec<TabItem>,
+    /// 当前激活的标签页 ID (Subject ID)
+    pub active_tab_id: Option<i32>,
+
     // ---------- SHOW ABOUT --------------------------------
     pub show_about: bool,
 
@@ -64,6 +70,8 @@ impl Models {
             import_preview_state: ImportPreviewState::new(),
             show_test: false,
             grouping_state: GroupingState::default(),
+            tabs: vec![],
+            active_tab_id: None,
         }
     }
 
@@ -292,6 +300,50 @@ impl Models {
         cx.notify();
     }
 
+    // ----------------------------- Tab Management Logic --------------------------
+
+    /// 打开一个用户标签页。如果已存在则切换过去，否则新建。
+    pub fn open_tab(&mut self, subject: &Subject, cx: &mut App) {
+        // 注意: 这里通常用 &mut AppContext 来 notify
+        if !self.tabs.iter().any(|t| t.subject_id == subject.id) {
+            self.tabs.push(TabItem::new(subject));
+        }
+        self.active_tab_id = Some(subject.id);
+        // cx.notify(); // 如果你的架构是在 update 回调外 notify，这里不需要，否则需要
+    }
+
+    /// 关闭标签页
+    pub fn close_tab(&mut self, subject_id: i32) {
+        if let Some(index) = self.tabs.iter().position(|t| t.subject_id == subject_id) {
+            self.tabs.remove(index);
+
+            // 如果关闭的是当前激活的，需要切换激活状态
+            if self.active_tab_id == Some(subject_id) {
+                if let Some(last) = self.tabs.last() {
+                    self.active_tab_id = Some(last.subject_id);
+                } else {
+                    self.active_tab_id = None;
+                }
+            }
+        }
+    }
+
+    /// 激活标签页
+    pub fn activate_tab(&mut self, subject_id: i32) {
+        self.active_tab_id = Some(subject_id);
+    }
+
+    /// 获取当前激活的 Tab 数据引用
+    pub fn get_active_tab(&self) -> Option<&TabItem> {
+        self.active_tab_id
+            .and_then(|id| self.tabs.iter().find(|t| t.subject_id == id))
+    }
+
+    pub fn get_active_tab_mut(&mut self) -> Option<&mut TabItem> {
+        let id = self.active_tab_id?;
+        self.tabs.iter_mut().find(|t| t.subject_id == id)
+    }
+
     /// 🧪 测试专用：生成 Dummy 数据注入数据库
     pub fn seed_dummy_data(&self) {
         let mut conn = self.db_manager.get_conn().expect("Failed to connect DB");
@@ -478,5 +530,42 @@ impl GroupingState {
 
     pub fn clear(&mut self) {
         self.active_grouping_keys.clear();
+    }
+}
+
+/// 单个标签页的状态
+#[derive(Clone, Debug)]
+pub struct TabItem {
+    pub subject_id: i32,
+    pub name: String,
+    /// 原始数据（用于对比脏状态和重置）
+    pub original_attributes: Map<String, Value>,
+    /// 当前正在编辑的数据
+    pub working_attributes: Map<String, Value>,
+    /// 是否有未保存的更改
+    pub is_dirty: bool,
+}
+
+impl TabItem {
+    pub fn new(subject: &Subject) -> Self {
+        // 假设 subject.attributes 是 Value::Object
+        let attrs = subject.attributes.as_object().cloned().unwrap_or_default();
+        Self {
+            subject_id: subject.id,
+            name: subject.name.clone(),
+            original_attributes: attrs.clone(),
+            working_attributes: attrs,
+            is_dirty: false,
+        }
+    }
+
+    pub fn update_field(&mut self, key: &str, value: Value) {
+        self.working_attributes.insert(key.to_string(), value);
+        self.is_dirty = self.working_attributes != self.original_attributes;
+    }
+
+    pub fn mark_saved(&mut self) {
+        self.original_attributes = self.working_attributes.clone();
+        self.is_dirty = false;
     }
 }
