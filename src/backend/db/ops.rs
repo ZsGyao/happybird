@@ -142,10 +142,16 @@ impl DataService {
 
         for char in input.chars() {
             if let Some(pinyin) = char.to_pinyin() {
+                if !full_pinyin.is_empty() {
+                    full_pinyin.push(' ');
+                }
                 full_pinyin.push_str(pinyin.plain());
                 abbr_pinyin.push(pinyin.plain().chars().next().unwrap_or_default());
             } else {
                 // 非汉字字符直接保留
+                if !full_pinyin.is_empty() {
+                    full_pinyin.push(' ');
+                }
                 full_pinyin.push(char);
                 abbr_pinyin.push(char);
             }
@@ -257,24 +263,61 @@ impl DataService {
                 }
             } else {
                 // --- Global Keyword Search (修改部分) ---
-                // 支持: 名字 OR 拼音 OR 首字母 OR JSON属性
-                // 我们将输入的 term 转为小写进行模糊匹配，以配合生成的全小写拼音
-                let pattern = format!("%{}%", term.to_lowercase());
+                // 1. name: 模糊匹配 (%term%)
+                // 2. py_abbr: 模糊匹配 (%term%)
+                // 3. attributes: 模糊匹配 (%term%)
+                // 4. pinyin: 边界匹配 (term% OR % term%) -> 解决 "hang" 匹配 "chang" 的问题
 
-                conditions.push(
-                    "(name LIKE ? OR pinyin LIKE ? OR py_abbr LIKE ? OR attributes LIKE ?)"
-                        .to_string(),
-                );
+                for term in raw_query.split_whitespace() {
+                    if let Some((key, val)) = term.split_once(':') {
+                        // ... (Key-Value 搜索逻辑不变)
+                    } else {
+                        // --- Global Keyword Search ---
 
-                // 参数分别对应上面 SQL 中的 4 个 ?
-                // 1. name (原始输入匹配，这里可以保留原始大小写，或者SQLite NOCASE处理)
-                params.push(format!("%{}%", term));
-                // 2. pinyin (全拼，全小写匹配)
-                params.push(pattern.clone());
-                // 3. py_abbr (首字母，全小写匹配)
-                params.push(pattern.clone());
-                // 4. attributes (JSON 属性)
-                params.push(format!("%{}%", term));
+                        for term in raw_query.split_whitespace() {
+                            if let Some((key, val)) = term.split_once(':') {
+                                // ... (Key-Value 不变)
+                            } else {
+                                // --- Global Keyword Search (最终优化版) ---
+
+                                // 1. 名字、简拼、JSON属性：全模糊匹配 (%term%)
+                                let pattern_contains = format!("%{}%", term);
+
+                                // 2. 拼音分词匹配：
+                                //    A. 整个字段的开头 (例如 "hang..." -> "hang zhou")
+                                let pattern_pinyin_start = format!("{}%", term.to_lowercase());
+                                //    B. 中间某个音节的开头 (例如 "... hang..." -> "min hang")
+                                let pattern_pinyin_word_start =
+                                    format!("% {}%", term.to_lowercase());
+
+                                // 3. [关键修改] 拼音连写匹配 (仅限开头)：
+                                //    去掉空格后，必须是整个字符串的【前缀】
+                                //    这样搜 "shaoxing" 能中，但搜 "ang" 不会中 "chang"
+                                let pattern_compact_start = format!("{}%", term.to_lowercase());
+
+                                conditions.push(
+                                            "(
+                                                name LIKE ?
+                                                OR py_abbr LIKE ?
+                                                OR attributes LIKE ?
+                                                OR pinyin LIKE ?        -- 匹配 'hang zhou' (开头)
+                                                OR pinyin LIKE ?        -- 匹配 'min hang' (中间音节开头)
+                                                OR REPLACE(pinyin, ' ', '') LIKE ? -- [修改] 匹配 'shaoxingchang' (连写开头)
+                                            )".to_string()
+                                        );
+
+                                // 参数绑定
+                                params.push(pattern_contains.clone()); // name
+                                params.push(pattern_contains.clone()); // py_abbr
+                                params.push(pattern_contains.clone()); // attributes
+
+                                params.push(pattern_pinyin_start); // pinyin start
+                                params.push(pattern_pinyin_word_start); // pinyin word start
+                                params.push(pattern_compact_start); // [修改] pinyin compact start (注意这里不再是 %term%)
+                            }
+                        }
+                    }
+                }
             }
         }
 
