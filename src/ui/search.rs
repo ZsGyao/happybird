@@ -29,6 +29,7 @@ impl SearchPanel {
                         debug!("Input changed: {}", query);
                     }
                     InputEvent::PressEnter { .. } => {
+                        debug!("InputEvent::PressEnter");
                         let query = state.read(cx).value();
 
                         this.perform_search(query.to_string(), cx);

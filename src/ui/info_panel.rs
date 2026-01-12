@@ -122,10 +122,10 @@ impl InfoPanel {
             // =========================================================
             // 当焦点在这个 View 内时，这些快捷键生效
             cx.bind_keys([
-                gpui::KeyBinding::new("up", SelectPrev, None),
-                gpui::KeyBinding::new("down", SelectNext, None),
-                gpui::KeyBinding::new("enter", PerformPrimaryAction, None),
-                gpui::KeyBinding::new("space", PerformPrimaryAction, None),
+                gpui::KeyBinding::new("up", SelectPrev, Some("InfoList")),
+                gpui::KeyBinding::new("down", SelectNext, Some("InfoList")),
+                gpui::KeyBinding::new("enter", PerformPrimaryAction, Some("InfoList")),
+                gpui::KeyBinding::new("space", PerformPrimaryAction, Some("InfoList")),
             ]);
 
             // 3. 订阅数据变化：当后端数据更新时，自动重绘树
@@ -694,74 +694,82 @@ impl Render for InfoPanel {
             .relative()
             .track_focus(&self.focus_handle)
             .gap(px(8.0))
-            // 当焦点在这个 div 或其子元素上时，这些 Action 会被捕获并处理
-            .on_action(cx.listener(Self::action_select_prev))
-            .on_action(cx.listener(Self::action_select_next))
-            .on_action(cx.listener(Self::action_perform_primary))
             // ------ search
             .child(div().w_full().child(self.search.clone()))
             // ------ group control
             .child(self.render_grouping_bar(cx))
+            // 当焦点在这个 div 或其子元素上时，这些 Action 会被捕获并处理
+            .on_action(cx.listener(Self::action_select_prev))
+            .on_action(cx.listener(Self::action_select_next))
+            .on_action(cx.listener(Self::action_perform_primary))
             // ------ sider center source tree
             .child(
-                div().flex_1().size_full().relative().child(
-                    uniform_list("entries", item_count, {
-                        cx.processor(|this, range: Range<usize>, window, cx| {
-                            range
-                                .map(|ix| this.render_tree_item(ix, window, cx).into_any_element())
-                                .collect()
-                        })
-                    })
+                div()
+                    .flex_1()
                     .size_full()
-                    // --------- Visual Guides ----------
-                    .with_decoration(
-                        indent_guides(INDENT_SIZE, IndentGuideColors::panel(cx))
-                            .with_compute_indents_fn(cx.entity(), |this, range, _, _| {
-                                let mut depths = SmallVec::with_capacity(range.len());
-                                for i in range {
-                                    if let Some(entry) = this.tree_items.get(i) {
-                                        depths.push(entry.depth);
-                                    }
-                                }
-                                depths
-                            })
-                            .with_render_fn(cx.entity(), |_, params, _, _| {
-                                const PADDING_Y: Pixels = px(4.);
-                                let indent_size = params.indent_size;
-                                let item_height = params.item_height;
-
-                                params
-                                    .indent_guides
-                                    .into_iter()
-                                    .map(|layout| {
-                                        let offset = if layout.continues_offscreen {
-                                            px(0.)
-                                        } else {
-                                            PADDING_Y
-                                        };
-                                        let x_pos = layout.offset.x * indent_size + GUIDE_OFFSET;
-
-                                        RenderedIndentGuide {
-                                            bounds: Bounds::new(
-                                                point(
-                                                    x_pos,
-                                                    layout.offset.y * item_height + offset,
-                                                ),
-                                                size(
-                                                    px(1.),
-                                                    layout.length * item_height - offset * 2.,
-                                                ),
-                                            ),
-                                            layout,
-                                            is_active: false,
-                                            hitbox: None,
-                                        }
+                    .relative()
+                    .key_context("InfoList")
+                    .child(
+                        uniform_list("entries", item_count, {
+                            cx.processor(|this, range: Range<usize>, window, cx| {
+                                range
+                                    .map(|ix| {
+                                        this.render_tree_item(ix, window, cx).into_any_element()
                                     })
                                     .collect()
-                            }),
-                    )
-                    .track_scroll(self.scroll_handle.clone()),
-                ),
+                            })
+                        })
+                        .size_full()
+                        // --------- Visual Guides ----------
+                        .with_decoration(
+                            indent_guides(INDENT_SIZE, IndentGuideColors::panel(cx))
+                                .with_compute_indents_fn(cx.entity(), |this, range, _, _| {
+                                    let mut depths = SmallVec::with_capacity(range.len());
+                                    for i in range {
+                                        if let Some(entry) = this.tree_items.get(i) {
+                                            depths.push(entry.depth);
+                                        }
+                                    }
+                                    depths
+                                })
+                                .with_render_fn(cx.entity(), |_, params, _, _| {
+                                    const PADDING_Y: Pixels = px(4.);
+                                    let indent_size = params.indent_size;
+                                    let item_height = params.item_height;
+
+                                    params
+                                        .indent_guides
+                                        .into_iter()
+                                        .map(|layout| {
+                                            let offset = if layout.continues_offscreen {
+                                                px(0.)
+                                            } else {
+                                                PADDING_Y
+                                            };
+                                            let x_pos =
+                                                layout.offset.x * indent_size + GUIDE_OFFSET;
+
+                                            RenderedIndentGuide {
+                                                bounds: Bounds::new(
+                                                    point(
+                                                        x_pos,
+                                                        layout.offset.y * item_height + offset,
+                                                    ),
+                                                    size(
+                                                        px(1.),
+                                                        layout.length * item_height - offset * 2.,
+                                                    ),
+                                                ),
+                                                layout,
+                                                is_active: false,
+                                                hitbox: None,
+                                            }
+                                        })
+                                        .collect()
+                                }),
+                        )
+                        .track_scroll(self.scroll_handle.clone()),
+                    ),
             )
             .child(
                 div()
