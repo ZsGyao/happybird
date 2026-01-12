@@ -66,7 +66,7 @@ pub struct InfoPanel {
     /// 记录当前已展开的文件夹 ID 集合。
     expanded_ids: HashSet<String>,
     /// 当前选中项在 `tree_items` 中的索引。
-    selected_idx: Option<usize>,
+    selected_id: Option<String>,
 
     // --- UI 句柄 ---
     /// 列表的滚动状态句柄。
@@ -96,7 +96,7 @@ impl InfoPanel {
             let mut panel = InfoPanel {
                 tree_items: vec![],
                 expanded_ids,
-                selected_idx: None,
+                selected_id: None,
                 scroll_handle: UniformListScrollHandle::new(),
                 focus_handle,
                 search,
@@ -279,34 +279,26 @@ impl InfoPanel {
     // ------------------------------------ Actions ---------------------------------
 
     /// 切换指定索引项的展开/折叠状态。
-    fn toggle_expanded(&mut self, ix: usize, cx: &mut Context<Self>) {
-        if let Some(item) = self.tree_items.get(ix) {
-            if item.is_folder {
-                if self.expanded_ids.contains(&item.id) {
-                    self.expanded_ids.remove(&item.id);
-                } else {
-                    self.expanded_ids.insert(item.id.clone());
-                }
-
-                // 状态变更后，必须重新计算树结构
-                let store = cx.global::<GlobalAppState>().0.read(cx);
-                self.rebuild_tree(store);
-                cx.notify();
-            }
+    fn toggle_expanded(&mut self, id: &str, cx: &mut Context<Self>) {
+        if self.expanded_ids.contains(id) {
+            self.expanded_ids.remove(id);
+        } else {
+            self.expanded_ids.insert(id.to_string());
         }
+
+        let store = cx.global::<GlobalAppState>().0.read(cx);
+        self.rebuild_tree(store);
+        cx.notify();
     }
 
     /// 选中指定索引的项。
-    fn select_item(&mut self, ix: usize, cx: &mut Context<Self>) {
-        self.selected_idx = Some(ix);
+    fn select_item(&mut self, id: String, subject_id: Option<i32>, cx: &mut Context<Self>) {
+        self.selected_id = Some(id);
         cx.notify();
 
-        // 可选：触发其他全局事件，例如通知右侧面板显示详情
-        if let Some(item) = self.tree_items.get(ix) {
-            if let Some(subject_id) = item.subject_id {
-                println!("Selected Subject ID: {}", subject_id);
-                // cx.emit(SelectionChangedEvent(subject_id));
-            }
+        if let Some(sid) = subject_id {
+            println!("Selected Subject ID: {}", sid);
+            // cx.emit(SelectionChangedEvent(sid));
         }
     }
 
@@ -461,6 +453,8 @@ impl InfoPanel {
         }
 
         let item = &self.tree_items[ix];
+        let item_id = item.id.clone();
+        let item_subject_id = item.subject_id;
 
         // --- 逻辑：检测是否需要加载更多 (Infinite Scroll) ---
         // 如果渲染到了倒数第 10 个元素，触发加载下一页
@@ -478,7 +472,7 @@ impl InfoPanel {
             });
         }
 
-        let is_selected = self.selected_idx == Some(ix);
+        let is_selected = self.selected_id.as_ref() == Some(&item_id);
         let is_folder = item.is_folder;
         let is_open = item.is_open;
         let depth = item.depth;
@@ -506,11 +500,14 @@ impl InfoPanel {
                 }
                 cx.stop_propagation();
 
-                // 如果是文件夹，点击即切换
+                // 逻辑优化：
+                // 1. 如果是文件夹 -> 切换折叠
+                // 2. 如果是文件 -> 选中
+                // 3. (可选) 文件夹也可以被选中，看需求。这里实现为文件夹只折叠，文件只选中。
                 if is_folder {
-                    this.toggle_expanded(ix, cx);
+                    this.toggle_expanded(&item_id, cx);
                 } else {
-                    this.select_item(ix, cx);
+                    this.select_item(item_id.clone(), item_subject_id, cx);
                 }
             }))
             .child(
