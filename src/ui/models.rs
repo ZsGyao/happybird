@@ -10,106 +10,37 @@ use serde_json::{Value, json};
 
 use crate::backend::db::{config::DbManager, models::Subject, ops::DataService};
 
+/// The global state
 pub struct Models {
+    // ------------ data ------------------
+    /// Database manager
     db_manager: Arc<DbManager>,
+    /// The data in the database
     pub subjects: Vec<Subject>,
+    /// The data headers
     pub dynamic_headers: Vec<String>,
-    pub total_count: usize, // 数据库中的总记录数
+    /// Total count in the database
+    pub total_count: usize,
 
-    // ----- 分页状态 -------
+    // --------- INFO PANEL: page split state ----------
     pub is_loading: bool,
     pub is_loading_more: bool, // 防止滚动到底部时重复出发
     pub has_more: bool,        // 数据库中是否还有更多数据
     pub page: usize,
     pub page_size: usize,
-
     pub error_msg: Option<String>,
     pub selected_subject_id: Option<i32>,
     pub search_query: String,
+    pub grouping_state: GroupingState,
 
+    // ---------- IMPORT PANEL: import preview ----------------
     pub import_preview_state: ImportPreviewState,
 
+    // ---------- SHOW ABOUT --------------------------------
     pub show_about: bool,
 
     // -------- just for test ---------------
     pub show_test: bool,
-}
-
-/// Import preview global data and state
-#[derive(Debug)]
-pub struct ImportPreviewState {
-    /// Temp store the prase data from import file
-    pub import_preview_data: Option<Vec<HashMap<String, Value>>>,
-    /// Contorl the import preview ui whether show
-    pub show_import_modal: bool,
-    /// Check the the file is importing
-    pub is_importing: bool,
-    /// Store the error msg during import
-    pub import_error: Option<String>,
-    // ---------------------- Edit ----------------------------
-    /// The unit point in table that is editing
-    pub editing_cell: Option<(usize, String)>,
-    /// Store current active `Input` state entity,
-    /// if not store, the new `Input` will create in every render, which cause user cannot input
-    pub active_input: Option<Entity<InputState>>,
-    /// Whether open the edit mode, true means the table item can modify
-    pub is_edit_mode_enabled: bool,
-    // ---------------------- Select --------------------------
-    /// Whether open the selection mode, true means the table item can select by user, default `false`
-    pub is_selection_mode_enabled: bool,
-    pub selected_rows: BTreeSet<usize>,
-}
-
-impl ImportPreviewState {
-    pub fn new() -> Self {
-        Self {
-            import_preview_data: None,
-            show_import_modal: false,
-            is_importing: false,
-            import_error: None,
-            editing_cell: None,
-            active_input: None,
-            is_edit_mode_enabled: false,
-            is_selection_mode_enabled: false,
-            selected_rows: BTreeSet::new(),
-        }
-    }
-
-    /// 切换编辑模式
-    pub fn toggle_edit_mode(&mut self) {
-        self.is_edit_mode_enabled = !self.is_edit_mode_enabled;
-        // 如果关闭编辑模式，强行退出当前的编辑状态
-        if !self.is_edit_mode_enabled {
-            self.editing_cell = None;
-            self.active_input = None;
-        }
-    }
-
-    /// 切换选择模式
-    pub fn toggle_selection_mode(&mut self) {
-        self.is_selection_mode_enabled = !self.is_selection_mode_enabled;
-        println!("##### toggle_selection_mode click");
-        // 如果开启选择模式且当前没选任何行，可以根据需求决定是否全选，或者留空
-        // 这里策略：保持 selected_rows 不变，或者清空
-    }
-
-    /// 切换某一行的选中状态
-    pub fn toggle_row_selection(&mut self, row_ix: usize) {
-        if self.selected_rows.contains(&row_ix) {
-            self.selected_rows.remove(&row_ix);
-        } else {
-            self.selected_rows.insert(row_ix);
-        }
-    }
-
-    /// 全选或取消全选
-    pub fn toggle_select_all(&mut self, total_rows: usize) {
-        if self.selected_rows.len() == total_rows {
-            self.selected_rows.clear();
-        } else {
-            self.selected_rows = (0..total_rows).collect();
-        }
-    }
 }
 
 impl Models {
@@ -132,6 +63,7 @@ impl Models {
             total_count: 0,
             import_preview_state: ImportPreviewState::new(),
             show_test: false,
+            grouping_state: GroupingState::default(),
         }
     }
 
@@ -444,4 +376,107 @@ pub fn build_models(cx: &mut App) {
     });
 
     cx.set_global(GlobalAppState(models));
+}
+
+// ------------------------------------------------------ Sub Item ------------------------------------------
+
+/// Import preview global data and state
+#[derive(Debug)]
+pub struct ImportPreviewState {
+    /// Temp store the prase data from import file
+    pub import_preview_data: Option<Vec<HashMap<String, Value>>>,
+    /// Contorl the import preview ui whether show
+    pub show_import_modal: bool,
+    /// Check the the file is importing
+    pub is_importing: bool,
+    /// Store the error msg during import
+    pub import_error: Option<String>,
+    // ---------------------- Edit ----------------------------
+    /// The unit point in table that is editing
+    pub editing_cell: Option<(usize, String)>,
+    /// Store current active `Input` state entity,
+    /// if not store, the new `Input` will create in every render, which cause user cannot input
+    pub active_input: Option<Entity<InputState>>,
+    /// Whether open the edit mode, true means the table item can modify
+    pub is_edit_mode_enabled: bool,
+    // ---------------------- Select --------------------------
+    /// Whether open the selection mode, true means the table item can select by user, default `false`
+    pub is_selection_mode_enabled: bool,
+    pub selected_rows: BTreeSet<usize>,
+}
+
+impl ImportPreviewState {
+    pub fn new() -> Self {
+        Self {
+            import_preview_data: None,
+            show_import_modal: false,
+            is_importing: false,
+            import_error: None,
+            editing_cell: None,
+            active_input: None,
+            is_edit_mode_enabled: false,
+            is_selection_mode_enabled: false,
+            selected_rows: BTreeSet::new(),
+        }
+    }
+
+    /// 切换编辑模式
+    pub fn toggle_edit_mode(&mut self) {
+        self.is_edit_mode_enabled = !self.is_edit_mode_enabled;
+        // 如果关闭编辑模式，强行退出当前的编辑状态
+        if !self.is_edit_mode_enabled {
+            self.editing_cell = None;
+            self.active_input = None;
+        }
+    }
+
+    /// 切换选择模式
+    pub fn toggle_selection_mode(&mut self) {
+        self.is_selection_mode_enabled = !self.is_selection_mode_enabled;
+        println!("##### toggle_selection_mode click");
+        // 如果开启选择模式且当前没选任何行，可以根据需求决定是否全选，或者留空
+        // 这里策略：保持 selected_rows 不变，或者清空
+    }
+
+    /// 切换某一行的选中状态
+    pub fn toggle_row_selection(&mut self, row_ix: usize) {
+        if self.selected_rows.contains(&row_ix) {
+            self.selected_rows.remove(&row_ix);
+        } else {
+            self.selected_rows.insert(row_ix);
+        }
+    }
+
+    /// 全选或取消全选
+    pub fn toggle_select_all(&mut self, total_rows: usize) {
+        if self.selected_rows.len() == total_rows {
+            self.selected_rows.clear();
+        } else {
+            self.selected_rows = (0..total_rows).collect();
+        }
+    }
+}
+
+/// The info panel group config state
+#[derive(Debug, Clone, Default)]
+pub struct GroupingState {
+    /// 当前启用的分组字段列表，按顺序排列。
+    /// 例如：vec!["department", "role"] 表示先按部门分，再按角色分。
+    pub active_grouping_keys: Vec<String>,
+}
+
+impl GroupingState {
+    pub fn add_grouping(&mut self, key: String) {
+        if !self.active_grouping_keys.contains(&key) {
+            self.active_grouping_keys.push(key);
+        }
+    }
+
+    pub fn remove_grouping(&mut self, key: &str) {
+        self.active_grouping_keys.retain(|k| k != key);
+    }
+
+    pub fn clear(&mut self) {
+        self.active_grouping_keys.clear();
+    }
 }

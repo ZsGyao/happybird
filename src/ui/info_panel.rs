@@ -2,20 +2,29 @@
 //  1. ViewModel (视图模型)
 // =============================================================================
 
-use std::{collections::HashSet, ops::Range};
+use std::{
+    collections::{HashMap, HashSet},
+    ops::Range,
+};
 
 use gpui::{
     App, AppContext, AsyncApp, Bounds, ClickEvent, Context, Div, Entity, FocusHandle,
     InteractiveElement, IntoElement, ParentElement, PathPromptOptions, Pixels, Render,
     SharedString, Stateful, StatefulInteractiveElement, Styled, UniformListScrollHandle, Window,
-    div, point, px, size, uniform_list,
+    div, point, prelude::FluentBuilder, px, size, uniform_list,
 };
 use gpui_component::{
-    ActiveTheme, Icon, IconName, StyledExt, button::Button, h_flex, label::Label, list::ListItem,
+    ActiveTheme, Icon, IconName, Sizable, StyledExt,
+    button::{Button, ButtonVariants},
+    h_flex,
+    label::Label,
+    list::ListItem,
+    menu::{DropdownMenu, PopupMenuItem},
 };
 use smallvec::SmallVec;
 
 use crate::{
+    backend::db::models::Subject,
     debug, error,
     ui::{
         indent_guides::{IndentGuideColors, RenderedIndentGuide, indent_guides},
@@ -26,13 +35,10 @@ use crate::{
 };
 
 /// 用于 UI 渲染的树节点结构。
-///
-/// 这个结构体是“扁平化”后的树形数据。每一行 UI 对应一个 `TreeItem`。
-/// 它解耦了后端数据模型 (`Subject`) 和前端显示逻辑。
 #[derive(Clone, Debug)]
 struct TreeItem {
-    /// 节点的唯一标识符（例如："root", "subject-1"）。
-    /// 用于在 `expanded_ids` 中追踪展开状态。
+    /// 节点的唯一标识符（例如："root", "group:department:RD", "subject:1"）。
+    /// 这里的 ID 生成策略对于正确折叠/展开至关重要。
     id: String,
     /// 显示在界面上的文本。
     text: String,
@@ -44,6 +50,8 @@ struct TreeItem {
     is_open: bool,
     /// 关联的后端数据 ID。如果是虚拟节点（如 Root），则为 None。
     subject_id: Option<i32>,
+    /// 如果是分组节点，记录它是按哪个字段分的（用于图标或样式区分）。
+    group_key: Option<String>,
 }
 
 // =============================================================================
@@ -51,9 +59,6 @@ struct TreeItem {
 // =============================================================================
 
 /// 侧边信息面板组件。
-///
-/// 负责展示资源树（Subjects）和历史记录。
-/// 实现了 `Render` trait 以绘制 UI，并处理所有相关的鼠标键盘交互。
 pub struct InfoPanel {
     // --- 状态数据 ---
     /// 用于渲染的扁平化树节点列表。
@@ -131,26 +136,147 @@ impl InfoPanel {
             is_folder: true,
             is_open: is_root_open,
             subject_id: None,
+            group_key: None,
         });
 
-        // --- 2. 添加子节点 (仅当根节点展开时) ---
-        // 目前 Subject 结构是扁平的，这里将其作为根节点的直接子级。
-        // 如果未来 Subject 有层级关系，这里可以使用递归函数来生成。
-        if is_root_open {
-            for sub in &model.subjects {
+        if !is_root_open {
+            return;
+        }
+
+        // 2. 开始递归分组处理
+        // 获取当前激活的分组 keys (例如 ["department", "role"])
+        let group_keys = &model.grouping_state.active_grouping_keys;
+        // 准备所有 subjects 的引用
+        let subjects: Vec<&Subject> = model.subjects.iter().collect();
+        // 调用递归函数
+        self.build_recursive_groups(subjects, group_keys, 0, &root_id, 1);
+    }
+
+    /// 递归构建分组树
+    ///
+    /// # Arguments
+    /// * `subjects` - 当前层级待处理的用户列表
+    /// * `group_keys` - 剩余的分组依据字段列表
+    /// * `key_idx` - 当前正在处理 group_keys 中的第几个字段
+    /// * `parent_id` - 父节点的 ID（用于生成唯一 ID）
+    /// * `depth` - 当前深度
+    fn build_recursive_groups(
+        &mut self,
+        subjects: Vec<&Subject>,
+        group_keys: &Vec<String>,
+        key_idx: usize,
+        parent_id: &str,
+        depth: usize,
+    ) {
+        // 如果没有更多的分组字段了，直接渲染剩余的用户为叶子节点
+        if key_idx >= group_keys.len() {
+            for sub in subjects {
                 self.tree_items.push(TreeItem {
-                    id: sub.id.to_string(),
+                    id: format!("{}:sub:{}", parent_id, sub.id),
                     text: sub.name.clone(),
-                    depth: 1,         // 根节点是 0，子节点是 1
-                    is_folder: false, // 暂时假设 Subject 是叶子节点（文件）
+                    depth,
+                    is_folder: false,
                     is_open: false,
                     subject_id: Some(sub.id),
+                    group_key: None,
                 });
+            }
+            return;
+        }
+
+        // 获取当前用于分组的字段名 (例如 "department")
+        let current_key = &group_keys[key_idx];
+
+        // 1. 分组逻辑：将 subjects 按照 current_key 的值归类
+        let mut groups: HashMap<String, Vec<&Subject>> = HashMap::new();
+        let mut uncategorized: Vec<&Subject> = Vec::new();
+
+        for sub in subjects {
+            // 尝试从 JSON attributes 中获取值
+            if let Some(val) = sub.attributes.get(current_key) {
+                // 将 Value 转换为可显示的字符串 key
+                let group_name = match val {
+                    serde_json::Value::String(s) => s.clone(),
+                    serde_json::Value::Number(n) => n.to_string(),
+                    serde_json::Value::Bool(b) => b.to_string(),
+                    _ => "Other".to_string(), // 数组或对象暂归为 Other
+                };
+                groups.entry(group_name).or_default().push(sub);
+            } else {
+                uncategorized.push(sub);
+            }
+        }
+
+        // 2. 对分组名进行排序，保证 UI 稳定
+        let mut sorted_group_names: Vec<String> = groups.keys().cloned().collect();
+        sorted_group_names.sort();
+
+        // 3. 渲染每一个分组文件夹
+        for group_name in sorted_group_names {
+            let group_subjects = groups.remove(&group_name).unwrap();
+            let count = group_subjects.len();
+
+            // 生成该分组的唯一 ID
+            // 格式建议: "parent_id:key:value" -> "root:department:RD"
+            let node_id = format!("{}:{}:{}", parent_id, current_key, group_name);
+            let is_open = self.expanded_ids.contains(&node_id);
+
+            // 添加分组节点
+            self.tree_items.push(TreeItem {
+                id: node_id.clone(),
+                text: format!("{} ({})", group_name, count),
+                depth,
+                is_folder: true,
+                is_open,
+                subject_id: None,
+                group_key: Some(current_key.clone()),
+            });
+
+            // 如果展开，递归处理下一级
+            if is_open {
+                self.build_recursive_groups(
+                    group_subjects,
+                    group_keys,
+                    key_idx + 1, // 移动到下一个分组字段
+                    &node_id,
+                    depth + 1,
+                );
+            }
+        }
+
+        // 4. 处理未分类的项 (Uncategorized)
+        // 这些项通常放在最后，或者如果不分组就不显示文件夹直接显示
+        if !uncategorized.is_empty() {
+            let uncat_node_id = format!("{}:uncategorized", parent_id);
+            // 策略：如果还有下一级分组，或者这是第一级，我们把未分类的单独放一个文件夹
+            // 如果这是最后一级，直接展示用户
+
+            let is_open = self.expanded_ids.contains(&uncat_node_id);
+            self.tree_items.push(TreeItem {
+                id: uncat_node_id.clone(),
+                text: format!("Uncategorized ({})", uncategorized.len()),
+                depth,
+                is_folder: true,
+                is_open,
+                subject_id: None,
+                group_key: None,
+            });
+
+            if is_open {
+                // 对于未分类的，我们仍然尝试对其进行下一级分组 (key_idx + 1)
+                // 这样即使用户没有 "department"，但可能有 "interest"
+                self.build_recursive_groups(
+                    uncategorized,
+                    group_keys,
+                    key_idx + 1,
+                    &uncat_node_id,
+                    depth + 1,
+                );
             }
         }
     }
 
-    // --- 交互逻辑 (Actions) ---
+    // ------------------------------------ Actions ---------------------------------
 
     /// 切换指定索引项的展开/折叠状态。
     fn toggle_expanded(&mut self, ix: usize, cx: &mut Context<Self>) {
@@ -182,6 +308,134 @@ impl InfoPanel {
                 // cx.emit(SelectionChangedEvent(subject_id));
             }
         }
+    }
+
+    // [新增] 添加分组条件
+    fn action_add_grouping(&mut self, key: String, cx: &mut Context<Self>) {
+        let global_handle = cx.global::<GlobalAppState>().0.clone();
+        global_handle.update(cx, |model, cx| {
+            model.grouping_state.add_grouping(key);
+            cx.notify(); // 通知 Model 更新
+        });
+        // rebuild_tree 会通过 observe 自动触发
+    }
+
+    // [新增] 移除分组条件
+    fn action_remove_grouping(&mut self, key: String, cx: &mut Context<Self>) {
+        let global_handle = cx.global::<GlobalAppState>().0.clone();
+        global_handle.update(cx, |model, cx| {
+            model.grouping_state.remove_grouping(&key);
+            cx.notify();
+        });
+    }
+
+    // --------------------------------- Renderers ----------------------------
+
+    /// 渲染顶部的分组配置条
+    fn render_grouping_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let global = cx.global::<GlobalAppState>().0.read(cx);
+        let active_keys = &global.grouping_state.active_grouping_keys;
+        let available_headers = &global.dynamic_headers;
+
+        let global_model = cx.global::<GlobalAppState>().0.clone();
+
+        h_flex()
+            .w_full()
+            .gap(px(4.0))
+            .flex_wrap()
+            .items_center()
+            .child(
+                Label::new("Group by:")
+                    .text_xs()
+                    .text_color(cx.theme().colors.muted_foreground),
+            )
+            // 1. 渲染已激活的分组 Tag (这部分代码很好，保持不变)
+            .children(active_keys.iter().map(|key| {
+                let key_clone = key.clone();
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(2.0))
+                    .bg(cx.theme().colors.secondary)
+                    .rounded_md()
+                    .px(px(4.0))
+                    .py(px(2.0))
+                    .border_1()
+                    .border_color(cx.theme().colors.border)
+                    .child(Label::new(key.clone()).text_xs())
+                    .child(
+                        div()
+                            .id(SharedString::from(format!("del-{}", key)))
+                            .cursor_pointer()
+                            .child(Icon::new(IconName::Close).size(px(10.0)))
+                            .hover(|s| s.text_color(cx.theme().colors.link_hover))
+                            .on_click(cx.listener(move |this, _, _window, cx| {
+                                this.action_remove_grouping(key_clone.clone(), cx);
+                            })),
+                    )
+            }))
+            // 2. 添加按钮 (+) - 使用官方推荐的 dropdown_menu
+            .child(
+                Button::new("add-group")
+                    .icon(IconName::Plus)
+                    .small()
+                    .ghost()
+                    // [关键修改] 使用 dropdown_menu 构建原生风格菜单
+                    .dropdown_menu({
+                        let headers = available_headers.clone();
+                        let active_set: HashSet<_> = active_keys.iter().cloned().collect();
+
+                        let global_model = global_model.clone();
+
+                        move |mut menu, _window, cx| {
+                            // 场景 A: 没有可选属性
+                            if headers.is_empty() {
+                                return menu.item(
+                                    PopupMenuItem::new("No attributes found").disabled(true),
+                                );
+                            }
+
+                            // 场景 B: 循环添加可选属性
+                            // 使用 fold (或循环赋值) 来动态链式添加 item
+                            for h in &headers {
+                                if !active_set.contains(h) {
+                                    let h_clone = h.clone();
+                                    let model = global_model.clone();
+
+                                    menu = menu.item(PopupMenuItem::new(h.clone()).on_click(
+                                        move |_, window, cx| {
+                                            // 直接更新全局状态
+                                            model.update(cx, |m, cx| {
+                                                m.grouping_state.add_grouping(h_clone.clone());
+                                                cx.notify();
+                                            });
+                                        },
+                                    ));
+                                }
+                            }
+
+                            // 场景 C: 添加分隔线和清除按钮
+                            if !active_set.is_empty() {
+                                let model = global_model.clone();
+                                menu = menu.separator().item(
+                                    PopupMenuItem::new("Clear Grouping")
+                                        // 注意：PopupMenuItem 可能暂时不支持直接 set color，
+                                        // 如果需要红色警告色，可能需要查看文档是否支持 style 或 icon，
+                                        // 或者暂时用普通文本，这里用 Trash 图标增强语义。
+                                        .icon(IconName::Close)
+                                        .on_click(move |_, window, cx| {
+                                            model.update(cx, |m, cx| {
+                                                m.grouping_state.clear();
+                                                cx.notify();
+                                            });
+                                        }),
+                                );
+                            }
+
+                            menu
+                        }
+                    }),
+            )
     }
 
     /// 渲染单个列表项 (Atom Renderer)。
@@ -228,8 +482,8 @@ impl InfoPanel {
         let is_folder = item.is_folder;
         let is_open = item.is_open;
         let depth = item.depth;
+        let group_key = item.group_key.clone();
 
-        // 计算背景色
         let bg_color = if is_selected {
             cx.theme().colors.selection
         } else {
@@ -237,43 +491,66 @@ impl InfoPanel {
         };
 
         div()
-            .id(SharedString::from(format!(
-                "tree-item-{}",
-                self.tree_items[ix].id
-            )))
+            .id(SharedString::from(format!("tree-item-{}", item.id)))
             .h(px(24.0))
             .relative()
             .items_center()
-            .rounded_none()
             .pl(INDENT_SIZE * depth as f32)
             .pr(px(8.0))
             .cursor_pointer()
             .bg(bg_color)
+            .hover(|s| s.bg(cx.theme().colors.info_hover))
             .on_click(cx.listener(move |this, event: &ClickEvent, _window, cx| {
                 if event.is_right_click() || event.first_focus() {
                     return;
                 }
                 cx.stop_propagation();
 
-                // this.select_item(ix, cx);
+                // 如果是文件夹，点击即切换
                 if is_folder {
                     this.toggle_expanded(ix, cx);
                 } else {
-                    println!("Open tree item");
+                    this.select_item(ix, cx);
                 }
             }))
             .child(
-                ListItem::new(SharedString::from(format!("tree-list-item-{}", item.id))).child(
+                ListItem::new(SharedString::from(format!("li-{}", item.id))).child(
                     h_flex()
                         .items_center()
                         .gap_2()
                         .text_sm()
-                        .child(if is_folder {
-                            Icon::new(IconName::Folder)
-                        } else {
-                            Icon::new(IconName::File)
-                        })
-                        .child(Label::new(item.text.clone())),
+                        .child(
+                            // 图标逻辑：
+                            // Root -> Globe/Database
+                            // Group -> Folder (如果是部门可以用 Building, 兴趣用 Heart 等，这里暂统用 Folder)
+                            // User -> User/File
+                            if item.id == "root" {
+                                Icon::new(IconName::Dash).text_color(cx.theme().colors.primary)
+                            } else if is_folder {
+                                let icon = if is_open {
+                                    IconName::FolderOpen
+                                } else {
+                                    IconName::Folder
+                                };
+                                // 不同的分组层级可以用不同颜色
+                                let color = match group_key.as_deref() {
+                                    Some("department") | Some("部门") => cx.theme().colors.info,
+                                    Some("role") | Some("职位") => cx.theme().colors.warning,
+                                    _ => cx.theme().colors.blue,
+                                };
+                                Icon::new(icon).text_color(color)
+                            } else {
+                                Icon::new(IconName::User)
+                                    .text_color(cx.theme().colors.muted_foreground)
+                            },
+                        )
+                        .child(
+                            Label::new(item.text.clone())
+                                // 如果是分组节点，加粗显示
+                                .when(is_folder && item.id != "root", |s| {
+                                    s.font_weight(gpui::FontWeight::SEMIBOLD)
+                                }),
+                        ),
                 ),
             )
     }
@@ -296,8 +573,10 @@ impl Render for InfoPanel {
             .relative()
             .track_focus(&self.focus_handle)
             .gap(px(8.0))
-            // ------ search -------
+            // ------ search
             .child(div().w_full().child(self.search.clone()))
+            // ------ group control
+            .child(self.render_grouping_bar(cx))
             // ------ sider center source tree
             .child(
                 div().flex_1().size_full().relative().child(
