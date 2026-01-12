@@ -339,6 +339,11 @@ impl Models {
             .and_then(|id| self.tabs.iter().find(|t| t.subject_id == id))
     }
 
+    /// 获取数据库管理器引用（用于异步任务）
+    pub fn get_db_manager(&self) -> Arc<DbManager> {
+        self.db_manager.clone()
+    }
+
     pub fn get_active_tab_mut(&mut self) -> Option<&mut TabItem> {
         let id = self.active_tab_id?;
         self.tabs.iter_mut().find(|t| t.subject_id == id)

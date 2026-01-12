@@ -283,7 +283,7 @@ impl TableDelegate for PreviewDelegate {
                 div()
                     .text_sm()
                     .text_color(cx.theme().colors.foreground)
-                    .whitespace_nowrap()
+                    // .whitespace_nowrap()
                     .overflow_hidden()
                     .text_ellipsis()
                     .child(cell_value),

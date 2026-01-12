@@ -7,6 +7,7 @@ use crate::{
     ui::{
         assets::HappybirdAsset,
         constants::{APP_LEFT_PANEL_INIT_W, APP_RIGHT_PANEL_INIT_W},
+        detail_panel::DetailPanel,
         import_panel::ImportPanel,
         info_panel::InfoPanel,
         models::GlobalAppState,
@@ -48,6 +49,7 @@ pub struct WindowShadow {
     pub info_panel: Entity<InfoPanel>,
     pub import_panel: Option<Entity<ImportPanel>>,
     pub test_table: Entity<HappyBirdComponentTest>,
+    pub detail_panel: Entity<DetailPanel>,
 }
 
 impl Render for WindowShadow {
@@ -229,10 +231,10 @@ impl Render for WindowShadow {
                                                     .child("Edit button"),
                                             )
                                             .child(
-                                                // v_resizable("info-show-panel").child(
-                                                //     resizable_panel().child("Info Show Panel"),
-                                                // ),
-                                                "Info Show Panel",
+                                                div()
+                                                    .flex_1()
+                                                    .size_full()
+                                                    .child(self.detail_panel.clone()),
                                             ),
                                     ),
                                 )
@@ -384,6 +386,7 @@ pub fn run() -> anyhow::Result<()> {
                     info_panel: InfoPanel::new(window, cx),
                     import_panel: None,
                     test_table: HappyBirdComponentTest::new(cx, window),
+                    detail_panel: DetailPanel::new(cx),
                 });
                 Root::new(view, window, cx)
             })

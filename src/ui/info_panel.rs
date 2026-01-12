@@ -405,12 +405,22 @@ impl InfoPanel {
 
     /// 选中指定索引的项。
     fn select_item(&mut self, id: String, subject_id: Option<i32>, cx: &mut Context<Self>) {
+        // 1. 设置当前 UI 的选中状态（高亮显示）
         self.selected_id = Some(id);
         cx.notify();
 
+        // 2. 如果是具体的用户（subject_id 存在），则打开标签页
         if let Some(sid) = subject_id {
-            println!("Selected Subject ID: {}", sid);
-            // cx.emit(SelectionChangedEvent(sid));
+            let global_handle = cx.global::<GlobalAppState>().0.clone();
+
+            global_handle.update(cx, |model, cx| {
+                // 为了避免 Rust 的借用检查错误（同时对 model 进行不可变借用查找和可变借用修改），
+                // 我们先找到并克隆出 Subject 数据
+                if let Some(subject) = model.subjects.iter().find(|s| s.id == sid).cloned() {
+                    // 调用 models.rs 中定义的 open_tab
+                    model.open_tab(&subject, cx);
+                }
+            });
         }
     }
 
