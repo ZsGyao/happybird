@@ -218,26 +218,11 @@ impl Render for WindowShadow {
                                         .size_range(px(180.0)..Pixels::MAX)
                                         .child(self.info_panel.clone()),
                                 )
-                                .child(
-                                    resizable_panel().size(center_init_size).child(
-                                        div()
-                                            .w_full()
-                                            .v_flex()
-                                            .child(
-                                                div()
-                                                    .h(px(40.0))
-                                                    .border_b_1()
-                                                    .border_color(cx.theme().colors.border)
-                                                    .child("Edit button"),
-                                            )
-                                            .child(
-                                                div()
-                                                    .flex_1()
-                                                    .size_full()
-                                                    .child(self.detail_panel.clone()),
-                                            ),
+                                .child(resizable_panel().size(center_init_size).child(
+                                    div().w_full().v_flex().child(
+                                        div().flex_1().size_full().child(self.detail_panel.clone()),
                                     ),
-                                )
+                                ))
                                 .child(
                                     resizable_panel()
                                         .size(APP_RIGHT_PANEL_INIT_W)

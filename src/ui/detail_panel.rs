@@ -2,19 +2,20 @@
 
 use gpui::{
     AnyElement, App, AppContext, Context, Entity, FocusHandle, IntoElement, KeyBinding, Render,
-    SharedString, Window, div, prelude::*, px,
+    SharedString, Subscription, Window, div, prelude::*, px,
 };
 use gpui_component::{
     ActiveTheme, Disableable, Icon, IconName,
     button::{Button, ButtonVariants},
     h_flex,
+    input::{Input, InputEvent, InputState},
     label::Label,
     v_flex,
 };
 use serde_json::Value;
 use std::collections::BTreeMap;
 
-use crate::ui::models::GlobalAppState;
+use crate::ui::models::{GlobalAppState, TabItem};
 
 // =============================================================================
 //  1. Actions (定义面板专属动作)
@@ -22,7 +23,14 @@ use crate::ui::models::GlobalAppState;
 
 gpui::actions!(
     detail_panel,
-    [SaveActiveTab, CloseActiveTab, NextTab, PrevTab]
+    [
+        SaveActiveTab,
+        CloseActiveTab,
+        NextTab,
+        PrevTab,
+        ToggleEditMode,
+        CancelEdit
+    ]
 );
 
 // =============================================================================
@@ -32,6 +40,8 @@ gpui::actions!(
 pub struct DetailPanel {
     /// 焦点句柄，用于接收键盘事件 (Cmd+S, Cmd+W 等)
     focus_handle: FocusHandle,
+    /// 本地存储输入框的订阅，防止内存泄漏或重复订阅
+    input_subscriptions: BTreeMap<String, Subscription>,
 }
 
 impl DetailPanel {
@@ -43,14 +53,19 @@ impl DetailPanel {
             // --- 绑定快捷键 ---
             // 这些快捷键只有当焦点在 DetailPanel 内时才生效
             cx.bind_keys([
-                KeyBinding::new("cmd-s", SaveActiveTab, None),
-                KeyBinding::new("cmd-w", CloseActiveTab, None),
+                KeyBinding::new("ctrl-s", SaveActiveTab, None),
+                KeyBinding::new("ctrl-w", CloseActiveTab, None),
                 // 类似浏览器的标签切换体验
-                KeyBinding::new("ctrl-tab", NextTab, None),
-                KeyBinding::new("ctrl-shift-tab", PrevTab, None),
+                KeyBinding::new("right", NextTab, None),
+                KeyBinding::new("left", PrevTab, None),
+                KeyBinding::new("ctrl-e", ToggleEditMode, None),
+                KeyBinding::new("escape", CancelEdit, None),
             ]);
 
-            Self { focus_handle }
+            Self {
+                focus_handle,
+                input_subscriptions: BTreeMap::new(),
+            }
         })
     }
 
@@ -104,6 +119,31 @@ impl DetailPanel {
         }
     }
 
+    /// 切换编辑模式 (只读 <-> 编辑)
+    fn action_toggle_edit(&mut self, _: &ToggleEditMode, _: &mut Window, cx: &mut Context<Self>) {
+        let global = cx.global::<GlobalAppState>().0.clone();
+        global.update(cx, |model, cx| {
+            if let Some(tab) = model.get_active_tab_mut() {
+                tab.toggle_edit_mode();
+                cx.notify();
+            }
+        });
+    }
+
+    /// 取消编辑 (重置数据并变为只读)
+    fn action_cancel_edit(&mut self, _: &CancelEdit, _: &mut Window, cx: &mut Context<Self>) {
+        let global = cx.global::<GlobalAppState>().0.clone();
+        global.update(cx, |model, cx| {
+            if let Some(tab) = model.get_active_tab_mut() {
+                // 只有在编辑模式下才响应 ESC
+                if tab.is_editing {
+                    tab.cancel_edit();
+                    cx.notify();
+                }
+            }
+        });
+    }
+
     /// 处理关闭当前标签
     fn action_close(&mut self, _: &CloseActiveTab, _: &mut Window, cx: &mut Context<Self>) {
         let global = cx.global::<GlobalAppState>().0.clone();
@@ -154,7 +194,63 @@ impl DetailPanel {
     }
 
     // ========================================================================
-    //  4. UI Renderers (视图渲染)
+    //  4. Logic Helpers
+    // ========================================================================
+
+    /// 确保 InputState 存在并已订阅变化
+    fn ensure_input_subscription(
+        &mut self,
+        tab: &mut TabItem,
+        key: &str,
+        value: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Entity<InputState> {
+        let unique_key = format!("{}-{}", tab.subject_id, key);
+
+        // 1. 获取或创建 Input Entity (存储在 TabItem 中)
+        let input_entity = if let Some(entity) = tab.input_states.get(key) {
+            entity.clone()
+        } else {
+            let entity = cx.new(|cx| {
+                let mut state = InputState::new(window, cx);
+                state.set_value(value.to_string(), window, cx);
+                state
+            });
+            tab.input_states.insert(key.to_string(), entity.clone());
+            entity
+        };
+
+        // 2. 确保已订阅事件
+        if !self.input_subscriptions.contains_key(&unique_key) {
+            let global_handle = cx.global::<GlobalAppState>().0.clone();
+            let key_owned = key.to_string();
+            let subject_id = tab.subject_id;
+
+            let subscription = cx.subscribe(
+                &input_entity,
+                move |_view, state: Entity<InputState>, event, cx| {
+                    if let InputEvent::Change = event {
+                        let new_text = state.read(cx).value();
+                        global_handle.update(cx, |model, _| {
+                            if let Some(t) =
+                                model.tabs.iter_mut().find(|t| t.subject_id == subject_id)
+                            {
+                                t.update_field(&key_owned, Value::String(new_text.to_string()));
+                            }
+                        });
+                    }
+                },
+            );
+
+            self.input_subscriptions.insert(unique_key, subscription);
+        }
+
+        input_entity
+    }
+
+    // ========================================================================
+    //  5. UI Renderers
     // ========================================================================
 
     /// 渲染顶部的 Tab 栏
@@ -269,10 +365,22 @@ impl DetailPanel {
     }
 
     /// 渲染编辑区域
-    fn render_editor(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let global_read = cx.global::<GlobalAppState>().0.read(cx);
+    fn render_editor(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let global_handle = cx.global::<GlobalAppState>().0.clone();
 
-        if global_read.active_tab_id.is_none() || global_read.tabs.is_empty() {
+        // 1. 获取当前 Tab 的数据快照 (Copy-on-write 思想，尽量减少锁的持有时间)
+        let (active_tab_data, has_tabs) = {
+            let global = global_handle.read(cx);
+            if let Some(tab) = global.get_active_tab() {
+                // 这里我们假设 TabItem 实现了 Clone (Entity 是 cheap clone 的)
+                (Some(tab.clone()), true)
+            } else {
+                (None, !global.tabs.is_empty())
+            }
+        };
+
+        // 2. 空状态渲染
+        if !has_tabs || active_tab_data.is_none() {
             return div()
                 .flex()
                 .size_full()
@@ -289,7 +397,7 @@ impl DetailPanel {
                                 .text_color(cx.theme().colors.border),
                         )
                         .child(
-                            Label::new("No Selection")
+                            Label::new("No User Selected")
                                 .text_xl()
                                 .font_weight(gpui::FontWeight::BOLD)
                                 .text_color(cx.theme().colors.muted_foreground),
@@ -303,31 +411,53 @@ impl DetailPanel {
                 .into_any_element();
         }
 
-        let active_tab = global_read.get_active_tab().unwrap();
+        // 3. 准备渲染数据
+        let mut active_tab = active_tab_data.unwrap();
         let subject_id = active_tab.subject_id;
         let tab_name = active_tab.name.clone();
         let is_dirty = active_tab.is_dirty;
+        let is_editing = active_tab.is_editing; // [关键] 获取编辑模式状态
 
-        // 获取数据快照
         let fields: BTreeMap<String, Value> = active_tab
             .working_attributes
             .iter()
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
 
-        // [关键修复]: 在这里（主作用域）预先生成所有行组件。
-        // 这避免了在 .children(iterator) 的闭包中捕获和使用 &mut cx，从而解决了编译错误。
-        let mut field_elements: Vec<AnyElement> = Vec::new();
+        // 4. 预先生成字段 UI 列表 (解决闭包生命周期问题)
+        let mut field_elements = Vec::new();
+
         for (key, value) in fields {
-            field_elements
-                .push(Self::render_field_row(subject_id, key, value, cx).into_any_element());
+            // 根据 is_editing 状态决定渲染只读 Label 还是可编辑 Input
+            let element = if is_editing {
+                self.render_editable_field(&mut active_tab, &key, value, window, cx)
+            } else {
+                self.render_readonly_field(&key, value, cx)
+            };
+            field_elements.push(element);
         }
 
+        // 5. 将新创建的 InputState 同步回 Model (如果有的话)
+        // 这一步确保我们在 render 期间创建的 Entity 不会丢失
+        // 注意：这可能导致一次额外的 notify，但在 DetailView 场景下性能是可以接受的
+        global_handle.update(cx, |m, _| {
+            if let Some(t) = m.get_active_tab_mut() {
+                // 简单的合并策略：如果本地有新创建的，就放进去
+                for (k, v) in active_tab.input_states {
+                    if !t.input_states.contains_key(&k) {
+                        t.input_states.insert(k, v);
+                    }
+                }
+            }
+        });
+
+        // 6. 渲染主体布局
         div()
             .size_full()
             .bg(cx.theme().colors.background)
             .flex()
             .flex_col()
+            // --- Toolbar ---
             .child(
                 h_flex()
                     .w_full()
@@ -337,6 +467,7 @@ impl DetailPanel {
                     .border_color(cx.theme().colors.border)
                     .items_center()
                     .justify_between()
+                    // 标题
                     .child(
                         h_flex().gap_2().items_center().child(
                             Label::new(tab_name)
@@ -344,22 +475,54 @@ impl DetailPanel {
                                 .font_weight(gpui::FontWeight::BOLD),
                         ),
                     )
+                    // 操作区
                     .child(
-                        h_flex().gap(px(12.0)).child(
-                            Button::new(SharedString::from("save-btn"))
-                                .label("Save Changes")
-                                .icon(IconName::Sun)
-                                .primary()
-                                .disabled(!is_dirty)
-                                .on_click(cx.listener(|this, _, window, cx| {
-                                    this.action_save(&SaveActiveTab, window, cx);
-                                })),
-                        ),
+                        h_flex()
+                            .gap(px(12.0))
+                            // [新增] 锁定/解锁按钮
+                            .child(
+                                Button::new(SharedString::from("toggle-edit"))
+                                    .icon(if is_editing {
+                                        IconName::Star
+                                    } else {
+                                        IconName::StarOff
+                                    }) // 🔓 / 🔒
+                                    .label(if is_editing { "Editing" } else { "Read Only" })
+                                    .when(is_editing, |btn| btn.ghost()) // 编辑态用 Ghost，突出右边的保存
+                                    .when(!is_editing, |btn| btn.bg(cx.theme().colors.secondary)) // 只读态用 Secondary
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        this.action_toggle_edit(&ToggleEditMode, window, cx);
+                                    })),
+                            )
+                            // 保存按钮 (仅在编辑且有修改时高亮，或只在编辑模式显示)
+                            .child(
+                                Button::new(SharedString::from("save-btn"))
+                                    .label("Save")
+                                    .icon(IconName::Sun)
+                                    .primary()
+                                    // 逻辑：不在编辑模式下禁用，或者没有脏数据禁用
+                                    .disabled(!is_editing || !is_dirty)
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        this.action_save(&SaveActiveTab, window, cx);
+                                    })),
+                            )
+                            // 取消按钮 (仅编辑模式显示)
+                            .when(is_editing, |div| {
+                                div.child(
+                                    Button::new(SharedString::from("cancel-btn"))
+                                        .label("Cancel")
+                                        .ghost()
+                                        .on_click(cx.listener(|this, _, window, cx| {
+                                            this.action_cancel_edit(&CancelEdit, window, cx);
+                                        })),
+                                )
+                            }),
                     ),
             )
+            // --- Form Scroll Area ---
             .child(
                 div()
-                    .id("filed_el")
+                    .id("tab-scroll-area")
                     .flex_1()
                     .relative()
                     .overflow_y_scroll()
@@ -368,138 +531,122 @@ impl DetailPanel {
                             .p(px(32.0))
                             .max_w(px(800.0))
                             .mx_auto()
-                            .child(v_flex().gap(px(20.0)).children(field_elements)), // 直接传递 Vec
+                            .child(v_flex().gap(px(20.0)).children(field_elements)),
                     ),
             )
             .into_any_element()
     }
 
-    /// 渲染单行字段编辑器
-    fn render_field_row(
-        subject_id: i32,
-        key: String,
-        value: Value,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
+    /// 辅助方法：渲染只读字段 (Label)
+    fn render_readonly_field(&self, key: &str, value: Value, cx: &mut Context<Self>) -> AnyElement {
         let theme = cx.theme();
+        let display_value = match value {
+            Value::String(s) => s,
+            Value::Number(n) => n.to_string(),
+            Value::Bool(b) => {
+                if b {
+                    "True".to_string()
+                } else {
+                    "False".to_string()
+                }
+            }
+            Value::Null => "Null".to_string(),
+            _ => format!("{}", value),
+        };
 
         v_flex()
             .w_full()
             .gap(px(6.0))
             .child(
-                Label::new(key.clone())
+                Label::new(key.to_string())
                     .text_sm()
                     .font_weight(gpui::FontWeight::SEMIBOLD)
                     .text_color(theme.colors.muted_foreground),
             )
-            .child(match value {
-                // Value::String(s) => {
-                //     let key_clone = key.clone();
-                //     // [修正] 使用 SharedString::from 生成 ID
-                //     // [修正] 显式标注闭包参数类型 `new_val: String`
-                //     Input::new(SharedString::from(format!("input-{}-{}", subject_id, key)))
-                //         .value(s)
-                //         .placeholder("Enter value...")
-                //         .on_change(move |new_val: String, _window, cx| {
-                //             let global = cx.global::<GlobalAppState>().0.clone();
-                //             global.update(cx, |model, _| {
-                //                 if let Some(tab) = model.get_active_tab_mut() {
-                //                     tab.update_field(&key_clone, Value::String(new_val));
-                //                 }
-                //             });
-                //         })
-                //         .into_any_element()
-                // }
-                // Value::Number(n) => {
-                //     let key_clone = key.clone();
-                //     Input::new(SharedString::from(format!("input-{}-{}", subject_id, key)))
-                //         .value(n.to_string())
-                //         .on_change(move |new_val: String, _window, cx| {
-                //             if let Ok(num) = new_val.parse::<f64>() {
-                //                 let global = cx.global::<GlobalAppState>().0.clone();
-                //                 global.update(cx, |model, _| {
-                //                     if let Some(tab) = model.get_active_tab_mut() {
-                //                         if let Some(v) = serde_json::Number::from_f64(num) {
-                //                             tab.update_field(&key_clone, Value::Number(v));
-                //                         }
-                //                     }
-                //                 });
-                //             }
-                //         })
-                //         .into_any_element()
-                // }
-
-                // [临时回退]: 暂时只展示文本，避免 Input 组件的复杂依赖问题
-                // 待引入 InputState 管理机制后，再恢复为 Input
-                Value::String(s) => {
-                    // let key_clone = key.clone();
-                    div()
-                        .px(px(8.0))
-                        .py(px(6.0))
-                        .border_1()
-                        .border_color(theme.colors.border)
-                        .rounded_md()
-                        .bg(theme.colors.background)
-                        // .child(Label::new(s).text_sm())
-                        // 模拟 Input 的外观
-                        .child(s)
-                        .into_any_element()
-                }
-                Value::Number(n) => div()
+            .child(
+                div()
                     .px(px(8.0))
                     .py(px(6.0))
-                    .border_1()
-                    .border_color(theme.colors.border)
+                    // 只读模式下，移除边框或者给一个很淡的背景，看起来像文本展示
+                    .bg(theme.colors.secondary.opacity(0.3))
                     .rounded_md()
-                    .bg(theme.colors.background)
-                    .child(n.to_string())
-                    .into_any_element(),
-                Value::Bool(b) => {
-                    let key_clone = key.clone();
-                    let current_val = b;
-                    // [修正] Button 样式：移除 variant()，改用 .when().primary() / .ghost()
-                    Button::new(SharedString::from(format!("toggle-{}-{}", subject_id, key)))
-                        .label(if b { "TRUE" } else { "FALSE" })
-                        .icon(if b { IconName::Check } else { IconName::Close })
-                        // 这是一个常见的 GPUI 模式：根据状态应用不同的样式方法
-                        .when(b, |btn| btn.primary())
-                        .when(!b, |btn| btn.ghost())
-                        .on_click(move |_, _, cx| {
-                            let global = cx.global::<GlobalAppState>().0.clone();
-                            global.update(cx, |model, _| {
-                                if let Some(tab) = model.get_active_tab_mut() {
-                                    tab.update_field(&key_clone, Value::Bool(!current_val));
-                                }
-                            });
-                        })
-                        .into_any_element()
-                }
-                Value::Null => div()
-                    .p(px(8.0))
-                    .bg(theme.colors.secondary)
-                    .rounded_md()
-                    .child(
-                        Label::new("Null")
-                            .text_sm()
-                            .text_color(theme.colors.muted_foreground),
-                    )
-                    .into_any_element(),
-                _ => div()
-                    .p(px(8.0))
-                    .bg(theme.colors.secondary)
-                    .rounded_md()
-                    .child(
-                        Label::new(format!("{}", value))
-                            .text_sm()
-                            .text_color(theme.colors.muted_foreground),
-                    )
-                    .into_any_element(),
-            })
+                    .child(Label::new(display_value).text_sm()),
+            )
+            .into_any_element()
+    }
+
+    /// 辅助方法：渲染可编辑字段 (Input/Button)
+    fn render_editable_field(
+        &mut self,
+        tab: &mut TabItem,
+        key: &str,
+        value: Value,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let subject_id = tab.subject_id;
+
+        // 为了在闭包中使用
+        let global_handle = cx.global::<GlobalAppState>().0.clone();
+        let key_clone = key.to_string();
+        let key_lable = key.to_string();
+
+        let input_component = match value {
+            Value::String(s) => {
+                let input_entity = self.ensure_input_subscription(tab, key, &s, window, cx);
+                Input::new(&input_entity).into_any_element()
+            }
+            Value::Number(n) => {
+                let input_entity =
+                    self.ensure_input_subscription(tab, key, &n.to_string(), window, cx);
+                Input::new(&input_entity).into_any_element()
+            }
+            Value::Bool(b) => {
+                // Bool 不需要 InputState，直接用 Button Toggle
+                Button::new(SharedString::from(format!("toggle-{}-{}", subject_id, key)))
+                    .label(if b { "TRUE" } else { "FALSE" })
+                    .icon(if b { IconName::Check } else { IconName::Close })
+                    .when(b, |btn| btn.primary())
+                    .when(!b, |btn| btn.ghost())
+                    .on_click(move |_, _, cx| {
+                        global_handle.update(cx, |model, _| {
+                            if let Some(tab) = model.get_active_tab_mut() {
+                                tab.update_field(&key_clone, Value::Bool(!b));
+                            }
+                        });
+                    })
+                    .into_any_element()
+            }
+            // 复杂类型回退到只读显示
+            _ => div()
+                .px(px(8.0))
+                .py(px(6.0))
+                .bg(cx.theme().colors.secondary)
+                .rounded_md()
+                .child(
+                    Label::new(format!("{}", value))
+                        .text_sm()
+                        .text_color(cx.theme().colors.muted_foreground),
+                )
+                .into_any_element(),
+        };
+
+        v_flex()
+            .w_full()
+            .gap(px(6.0))
+            .child(
+                Label::new(key_lable)
+                    .text_sm()
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .text_color(cx.theme().colors.primary),
+            ) // 编辑模式下 Label 颜色变深一点提示重点
+            .child(input_component)
+            .into_any_element()
     }
 }
 
 impl Render for DetailPanel {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // [修正] 捕获 focus_handle 供闭包使用
 
         div()
@@ -513,7 +660,9 @@ impl Render for DetailPanel {
             .on_action(cx.listener(Self::action_close))
             .on_action(cx.listener(Self::action_next_tab))
             .on_action(cx.listener(Self::action_prev_tab))
+            .on_action(cx.listener(Self::action_toggle_edit))
+            .on_action(cx.listener(Self::action_cancel_edit))
             .child(self.render_tab_bar(cx))
-            .child(self.render_editor(cx))
+            .child(self.render_editor(window, cx))
     }
 }

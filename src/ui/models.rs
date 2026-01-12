@@ -350,6 +350,7 @@ impl Models {
     }
 
     /// 🧪 测试专用：生成 Dummy 数据注入数据库
+    #[allow(unused)]
     pub fn seed_dummy_data(&self) {
         let mut conn = self.db_manager.get_conn().expect("Failed to connect DB");
 
@@ -549,6 +550,11 @@ pub struct TabItem {
     pub working_attributes: Map<String, Value>,
     /// 是否有未保存的更改
     pub is_dirty: bool,
+    /// 是否处于编辑模式
+    pub is_editing: bool,
+    // Key: field_key (e.g., "email", "age")
+    // Value: Entity<InputState>
+    pub input_states: HashMap<String, Entity<InputState>>,
 }
 
 impl TabItem {
@@ -561,7 +567,25 @@ impl TabItem {
             original_attributes: attrs.clone(),
             working_attributes: attrs,
             is_dirty: false,
+            input_states: HashMap::new(),
+            is_editing: false,
         }
+    }
+
+    // [新增] 切换编辑模式
+    pub fn toggle_edit_mode(&mut self) {
+        self.is_editing = !self.is_editing;
+        // 如果退出了编辑模式，且没有保存，也可以选择在这里重置数据
+        // 但通常我们保留 working_attributes 直到用户显式点击取消
+    }
+
+    // [新增] 取消编辑：重置数据并退出模式
+    pub fn cancel_edit(&mut self) {
+        self.working_attributes = self.original_attributes.clone();
+        self.is_dirty = false;
+        self.is_editing = false;
+        // 清空输入框状态缓存，让它们下次重新从原始数据加载
+        self.input_states.clear();
     }
 
     pub fn update_field(&mut self, key: &str, value: Value) {
