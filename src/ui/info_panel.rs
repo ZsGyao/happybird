@@ -10,8 +10,8 @@ use std::{
 use gpui::{
     App, AppContext, AsyncApp, Bounds, ClickEvent, Context, Div, Entity, FocusHandle,
     InteractiveElement, IntoElement, ParentElement, PathPromptOptions, Pixels, Render,
-    SharedString, Stateful, StatefulInteractiveElement, Styled, UniformListScrollHandle, Window,
-    div, point, prelude::FluentBuilder, px, size, uniform_list,
+    ScrollStrategy, SharedString, Stateful, StatefulInteractiveElement, Styled,
+    UniformListScrollHandle, Window, div, point, prelude::FluentBuilder, px, size, uniform_list,
 };
 use gpui_component::{
     ActiveTheme, Icon, IconName, Sizable, StyledExt,
@@ -33,6 +33,15 @@ use crate::{
     },
     warn,
 };
+
+gpui::actions!(
+    info_panel,
+    [
+        SelectPrev,
+        SelectNext,
+        PerformPrimaryAction, // Enter/Space
+    ]
+);
 
 /// 用于 UI 渲染的树节点结构。
 #[derive(Clone, Debug)]
@@ -107,6 +116,17 @@ impl InfoPanel {
 
             // 2. 初始构建树
             panel.rebuild_tree(global_model.read(cx));
+
+            // =========================================================
+            // [新增] 1. 绑定键盘快捷键到 Action
+            // =========================================================
+            // 当焦点在这个 View 内时，这些快捷键生效
+            cx.bind_keys([
+                gpui::KeyBinding::new("up", SelectPrev, None),
+                gpui::KeyBinding::new("down", SelectNext, None),
+                gpui::KeyBinding::new("enter", PerformPrimaryAction, None),
+                gpui::KeyBinding::new("space", PerformPrimaryAction, None),
+            ]);
 
             // 3. 订阅数据变化：当后端数据更新时，自动重绘树
             cx.observe(&global_model, |this: &mut Self, model, cx| {
@@ -273,6 +293,98 @@ impl InfoPanel {
                     depth + 1,
                 );
             }
+        }
+    }
+
+    // --- Keyboard Action Handlers ---
+
+    /// 处理 "上键"：选中上一个
+    fn action_select_prev(&mut self, _: &SelectPrev, _: &mut Window, cx: &mut Context<Self>) {
+        if self.tree_items.is_empty() {
+            return;
+        }
+
+        let current_index = self
+            .tree_items
+            .iter()
+            .position(|item| Some(&item.id) == self.selected_id.as_ref());
+
+        let new_index = match current_index {
+            Some(i) => {
+                if i > 0 {
+                    i - 1
+                } else {
+                    0
+                }
+            }
+            None => 0, // 如果当前没选中，按下键默认选第一个
+        };
+
+        self.select_item_by_index(new_index, cx);
+    }
+
+    /// 处理 "下键"：选中下一个
+    fn action_select_next(&mut self, _: &SelectNext, _: &mut Window, cx: &mut Context<Self>) {
+        if self.tree_items.is_empty() {
+            return;
+        }
+
+        let current_index = self
+            .tree_items
+            .iter()
+            .position(|item| Some(&item.id) == self.selected_id.as_ref());
+
+        let new_index = match current_index {
+            Some(i) => {
+                if i < self.tree_items.len() - 1 {
+                    i + 1
+                } else {
+                    self.tree_items.len() - 1
+                }
+            }
+            None => 0,
+        };
+
+        self.select_item_by_index(new_index, cx);
+    }
+
+    /// 处理 "Enter" 或 "Space"：切换折叠 或 点击 Item
+    fn action_perform_primary(
+        &mut self,
+        _: &PerformPrimaryAction,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        // 找到当前选中的项
+        if let Some(selected_id) = &self.selected_id {
+            // 我们需要找到对应的 tree_item，因为 selected_id 只是个 ID string
+            // 这里我们需要 clone 一下 item 以避免借用冲突，或者只取我们需要的数据
+            let item_opt = self
+                .tree_items
+                .iter()
+                .find(|i| &i.id == selected_id)
+                .cloned();
+
+            if let Some(item) = item_opt {
+                if item.is_folder {
+                    self.toggle_expanded(&item.id, cx);
+                } else {
+                    // 如果是文件，执行点击逻辑
+                    println!("Keyboard triggered action on: {}", item.text);
+                    // 如果点击还有其他副作用（比如打开右侧详情），在这里调用
+                    self.select_item(item.id, item.subject_id, cx);
+                }
+            }
+        }
+    }
+
+    /// 辅助函数：通过索引选中并滚动可见
+    fn select_item_by_index(&mut self, ix: usize, cx: &mut Context<Self>) {
+        if let Some(item) = self.tree_items.get(ix) {
+            self.selected_id = Some(item.id.clone());
+            self.scroll_handle
+                .scroll_to_item(ix, ScrollStrategy::Center); // [重要] 自动滚动到该位置
+            cx.notify();
         }
     }
 
@@ -561,6 +673,8 @@ impl Render for InfoPanel {
         const INDENT_SIZE: Pixels = px(16.0);
         const GUIDE_OFFSET: Pixels = px(16.0); // 缩进线应该在图标容器(16px)的中间(8px)
 
+        let focus_handle = self.focus_handle.clone();
+
         div()
             .v_flex()
             .id("info-panel")
@@ -570,6 +684,10 @@ impl Render for InfoPanel {
             .relative()
             .track_focus(&self.focus_handle)
             .gap(px(8.0))
+            // 当焦点在这个 div 或其子元素上时，这些 Action 会被捕获并处理
+            .on_action(cx.listener(Self::action_select_prev))
+            .on_action(cx.listener(Self::action_select_next))
+            .on_action(cx.listener(Self::action_perform_primary))
             // ------ search
             .child(div().w_full().child(self.search.clone()))
             // ------ group control
