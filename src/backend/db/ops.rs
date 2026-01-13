@@ -86,17 +86,15 @@ impl DataService {
                                 row_data,
                                 "IMPORT_UPDATE",
                             )?;
-                            Some(id)
+                            id
                         }
                         None => {
-                            Self::perform_insert(&tx, &name, row_data)?;
-                            None
+                            let new_id = Self::perform_insert(&tx, &name, row_data)?;
+                            new_id
                         }
                     };
 
-                    if let Some(subject_id) = subject_id {
-                        affected_ids.push(subject_id);
-                    }
+                    affected_ids.push(subject_id);
                 }
             }
         }
@@ -595,7 +593,7 @@ impl DataService {
         })
     }
 
-    fn perform_insert(tx: &Transaction, name: &str, data: HashMap<String, Value>) -> Result<()> {
+    fn perform_insert(tx: &Transaction, name: &str, data: HashMap<String, Value>) -> Result<i32> {
         let json_str = serde_json::to_string(&data)?;
 
         // 1. 生成拼音
@@ -606,13 +604,13 @@ impl DataService {
             "INSERT INTO subjects (name, pinyin, py_abbr, attributes) VALUES (?, ?, ?, ?)",
             params![name, pinyin, py_abbr, json_str],
         )?;
-        let id = tx.last_insert_rowid();
+        let id = tx.last_insert_rowid() as i32;
 
         tx.execute(
             "INSERT INTO change_log (subject_id, action_type, new_value) VALUES (?, 'CREATE', ?)",
             params![id, "User Created"],
         )?;
-        Ok(())
+        Ok(id)
     }
 
     fn perform_update(
