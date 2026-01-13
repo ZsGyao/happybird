@@ -14,7 +14,7 @@ use gpui::{
     UniformListScrollHandle, Window, div, point, prelude::FluentBuilder, px, size, uniform_list,
 };
 use gpui_component::{
-    ActiveTheme, Icon, IconName, Sizable, StyledExt,
+    ActiveTheme, Icon, IconName, Sizable,
     button::{Button, ButtonVariants},
     h_flex,
     label::Label,
@@ -501,7 +501,7 @@ impl InfoPanel {
 
                         let global_model = global_model.clone();
 
-                        move |mut menu, _window, cx| {
+                        move |mut menu, _window, _cx| {
                             // 场景 A: 没有可选属性
                             if headers.is_empty() {
                                 return menu.item(
@@ -517,7 +517,7 @@ impl InfoPanel {
                                     let model = global_model.clone();
 
                                     menu = menu.item(PopupMenuItem::new(h.clone()).on_click(
-                                        move |_, window, cx| {
+                                        move |_, _window, cx| {
                                             // 直接更新全局状态
                                             model.update(cx, |m, cx| {
                                                 m.grouping_state.add_grouping(h_clone.clone());
@@ -537,7 +537,7 @@ impl InfoPanel {
                                         // 如果需要红色警告色，可能需要查看文档是否支持 style 或 icon，
                                         // 或者暂时用普通文本，这里用 Trash 图标增强语义。
                                         .icon(IconName::Close)
-                                        .on_click(move |_, window, cx| {
+                                        .on_click(move |_, _window, cx| {
                                             model.update(cx, |m, cx| {
                                                 m.grouping_state.clear();
                                                 cx.notify();
@@ -676,32 +676,31 @@ impl InfoPanel {
 }
 
 impl Render for InfoPanel {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let item_count = self.tree_items.len();
-
-        // 样式常量
         const INDENT_SIZE: Pixels = px(16.0);
-        const GUIDE_OFFSET: Pixels = px(16.0); // 缩进线应该在图标容器(16px)的中间(8px)
-
-        let focus_handle = self.focus_handle.clone();
+        const GUIDE_OFFSET: Pixels = px(16.0);
 
         div()
-            .v_flex()
             .id("info-panel")
             .size_full()
-            .p(px(13.0))
+            .flex()
+            .flex_col()
+            .overflow_hidden()
             .bg(cx.theme().colors.background)
-            .relative()
+            .p(px(13.0))
             .gap(px(8.0))
             // ------ search
-            .child(div().w_full().child(self.search.clone()))
+            .child(div().flex_shrink_0().w_full().child(self.search.clone()))
             // ------ group control
-            .child(self.render_grouping_bar(cx))
+            .child(div().flex_shrink_0().child(self.render_grouping_bar(cx)))
             // ------ sider center source tree
             .child(
                 div()
                     .flex_1()
-                    .size_full()
+                    .w_full()
+                    .min_h(px(0.0))
+                    .overflow_hidden()
                     .relative()
                     .track_focus(&self.focus_handle)
                     .key_context("InfoList")
@@ -720,6 +719,7 @@ impl Render for InfoPanel {
                             })
                         })
                         .size_full()
+                        .track_scroll(self.scroll_handle.clone())
                         // --------- Visual Guides ----------
                         .with_decoration(
                             indent_guides(INDENT_SIZE, IndentGuideColors::panel(cx))
@@ -773,6 +773,7 @@ impl Render for InfoPanel {
             )
             .child(
                 div()
+                    .flex_shrink_0()
                     .w_full()
                     .flex()
                     .flex_col()
@@ -853,21 +854,20 @@ impl Render for InfoPanel {
                                 div()
                                     .flex_1()
                                     .child(Button::new("Config").w_full().label("Config")),
-                            )
-                            .child(
-                                div().flex_1().child(
-                                    Button::new("Test Button")
-                                        .w_full()
-                                        .label("Test Button")
-                                        .on_click(|e, window: &mut Window, cx| {
-                                            println!("Test Button click");
-                                            let model = cx.global::<GlobalAppState>().0.clone();
-                                            model.update(cx, |val, _| {
-                                                val.show_test = !val.show_test;
-                                            })
-                                        }),
-                                ),
-                            ),
+                            ), // .child(
+                               //     div().flex_1().child(
+                               //         Button::new("Test Button")
+                               //             .w_full()
+                               //             .label("Test Button")
+                               //             .on_click(|e, window: &mut Window, cx| {
+                               //                 println!("Test Button click");
+                               //                 let model = cx.global::<GlobalAppState>().0.clone();
+                               //                 model.update(cx, |val, _| {
+                               //                     val.show_test = !val.show_test;
+                               //                 })
+                               //             }),
+                               //     ),
+                               // ),
                     ),
             )
     }

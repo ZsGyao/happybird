@@ -1,8 +1,7 @@
 use gpui::{
     App, AppContext, Context, Entity, IntoElement, ParentElement, Render, Styled, Window, div, px,
 };
-use gpui_component::table::{Column, ColumnSort, Table, TableDelegate, TableState};
-use std::ops::Range;
+use gpui_component::table::{Column, Table, TableDelegate, TableState};
 
 pub struct HappyBirdComponentTest {
     test_table: Entity<TableState<MyTableDelegate>>,
@@ -14,7 +13,7 @@ impl HappyBirdComponentTest {
         let delegate = MyTableDelegate::new();
         let state = cx.new(|cx| TableState::new(delegate, window, cx));
 
-        cx.new(|cx| Self { test_table: state })
+        cx.new(|_cx| Self { test_table: state })
     }
 }
 

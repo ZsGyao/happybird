@@ -8,7 +8,6 @@ use gpui::{
 use gpui_component::{
     ActiveTheme, Disableable, StyledExt,
     button::Button,
-    checkbox::Checkbox,
     h_flex,
     input::{Input, InputEvent, InputState},
     table::{Column, Table, TableDelegate, TableState},

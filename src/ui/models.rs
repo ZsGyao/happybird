@@ -307,7 +307,7 @@ impl Models {
     // ----------------------------- Tab Management Logic --------------------------
 
     /// 打开一个用户标签页。如果已存在则切换过去，否则新建。
-    pub fn open_tab(&mut self, subject: &Subject, cx: &mut App) {
+    pub fn open_tab(&mut self, subject: &Subject, _cx: &mut App) {
         // 注意: 这里通常用 &mut AppContext 来 notify
         if !self.tabs.iter().any(|t| t.subject_id == subject.id) {
             self.tabs.push(TabItem::new(subject));
@@ -587,7 +587,7 @@ impl TabItem {
             is_dirty: false,
             input_states: HashMap::new(),
             is_editing: false,
-            is_inspector_open: true,
+            is_inspector_open: false,
             history_logs: None,
             inspector_mode: HistoryViewMode::Timeline,
         }

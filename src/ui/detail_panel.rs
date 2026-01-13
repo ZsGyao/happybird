@@ -1,8 +1,8 @@
 // src/ui/detail_panel.rs
 
 use gpui::{
-    AnyElement, App, AppContext, AsyncApp, Context, Entity, FocusHandle, IntoElement, KeyBinding,
-    Render, SharedString, Subscription, Window, div, prelude::*, px,
+    AnyElement, App, AppContext, Context, Entity, FocusHandle, IntoElement, KeyBinding, Render,
+    SharedString, Subscription, Window, div, prelude::*, px,
 };
 use gpui_component::{
     ActiveTheme, Disableable, Icon, IconName, Selectable, Sizable,
@@ -154,23 +154,25 @@ impl DetailPanel {
         let global = cx.global::<GlobalAppState>().0.clone();
 
         // 1. 同步更新开关状态
-        let load_info = global.update(cx, |model, _| {
+        let load_info = global.update(cx, |model, cx| {
             if let Some(tab) = model.get_active_tab_mut() {
                 tab.is_inspector_open = !tab.is_inspector_open;
                 // 如果打开面板且数据为空，返回 ID 以便加载
                 if tab.is_inspector_open && tab.history_logs.is_none() {
                     return Some((tab.subject_id, model.get_db_manager()));
                 }
+                // 状态改变，通知订阅者
+                cx.notify();
             }
             None
         });
 
-        // 立即通知 UI 重新渲染 (打开/关闭面板动画)
+        // 这里的 notify 是为了让 DetailPanel 自身重绘（响应 is_inspector_open 的变化）
         cx.notify();
 
         // 2. 如果需要加载数据
         if let Some((subject_id, db_manager)) = load_info {
-            cx.spawn(async move |this, cx| {
+            cx.spawn(async move |_this, cx| {
                 // 在后台线程获取数据
                 let result = cx
                     .background_executor()
@@ -910,7 +912,7 @@ impl Render for DetailPanel {
                 if has_active {
                     let mut tab = active_tab_clone.unwrap();
                     let show_inspector = tab.is_inspector_open;
-                    let inspector_mode = tab.inspector_mode;
+                    // let inspector_mode = tab.inspector_mode;
 
                     vec![
                         // 1. 左栏：表单

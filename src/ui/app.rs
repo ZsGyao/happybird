@@ -70,7 +70,7 @@ impl Render for WindowShadow {
         // 1. 获取开关状态
         let global = cx.global::<GlobalAppState>().0.read(cx);
         let show = global.import_preview_state.show_import_modal;
-        let is_loading = global.import_preview_state.is_importing; // 你可以在界面上根据这个显示个 Loading
+        // let is_loading = global.import_preview_state.is_importing; // 你可以在界面上根据这个显示个 Loading
 
         // 2. 【核心逻辑】开关开了才创建，关了就销毁
         if show {
@@ -210,36 +210,26 @@ impl Render for WindowShadow {
                     .max_h_full()
                     .child(self.header.clone()) // 从此，窗口被绘制完成
                     .child(
-                        div().flex().h_flex().h_full().child(
+                        div().flex().h_flex().size_full().overflow_hidden().child(
                             h_resizable("center-dock")
                                 .child(
                                     resizable_panel()
                                         .size(px(260.0))
                                         .size_range(px(180.0)..Pixels::MAX)
-                                        .child(self.info_panel.clone()),
-                                )
-                                .child(resizable_panel().size(center_init_size).child(
-                                    div().w_full().v_flex().child(
-                                        div().flex_1().size_full().child(self.detail_panel.clone()),
-                                    ),
-                                ))
-                                .child(
-                                    resizable_panel()
-                                        .size(APP_RIGHT_PANEL_INIT_W)
-                                        .size_range(px(80.0)..Pixels::MAX)
                                         .child(
                                             div()
-                                                .w_full()
-                                                .v_flex()
-                                                .child(
-                                                    div()
-                                                        .h(px(40.0))
-                                                        .border_t_1()
-                                                        .border_color(cx.theme().colors.border)
-                                                        .child("PROPERTY AUDIT"),
-                                                )
-                                                .child("ITEM VIEW"),
+                                                .size_full()
+                                                .overflow_hidden()
+                                                .child(self.info_panel.clone()),
                                         ),
+                                )
+                                .child(
+                                    resizable_panel().size(center_init_size).child(
+                                        div()
+                                            .size_full()
+                                            .overflow_hidden()
+                                            .child(self.detail_panel.clone()),
+                                    ),
                                 ),
                         ),
                     )
