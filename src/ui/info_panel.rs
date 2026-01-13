@@ -692,23 +692,23 @@ impl Render for InfoPanel {
             .p(px(13.0))
             .bg(cx.theme().colors.background)
             .relative()
-            .track_focus(&self.focus_handle)
             .gap(px(8.0))
             // ------ search
             .child(div().w_full().child(self.search.clone()))
             // ------ group control
             .child(self.render_grouping_bar(cx))
-            // 当焦点在这个 div 或其子元素上时，这些 Action 会被捕获并处理
-            .on_action(cx.listener(Self::action_select_prev))
-            .on_action(cx.listener(Self::action_select_next))
-            .on_action(cx.listener(Self::action_perform_primary))
             // ------ sider center source tree
             .child(
                 div()
                     .flex_1()
                     .size_full()
                     .relative()
+                    .track_focus(&self.focus_handle)
                     .key_context("InfoList")
+                    // 当焦点在这个 div 或其子元素上时，这些 Action 会被捕获并处理
+                    .on_action(cx.listener(Self::action_select_prev))
+                    .on_action(cx.listener(Self::action_select_next))
+                    .on_action(cx.listener(Self::action_perform_primary))
                     .child(
                         uniform_list("entries", item_count, {
                             cx.processor(|this, range: Range<usize>, window, cx| {
