@@ -8,7 +8,11 @@ use gpui::{App, Context, Entity, Global, prelude::*};
 use gpui_component::input::InputState;
 use serde_json::{Map, Value, json};
 
-use crate::backend::db::{config::DbManager, models::Subject, ops::DataService};
+use crate::backend::db::{
+    config::DbManager,
+    models::{ChangeLogEntry, Subject},
+    ops::DataService,
+};
 
 /// The global state
 pub struct Models {
@@ -36,13 +40,13 @@ pub struct Models {
     // ---------- IMPORT PANEL: import preview ----------------
     pub import_preview_state: ImportPreviewState,
 
-    // ---------- DETAIL PANEL: Tab Management ----------
+    // ---------- DETAIL PANEL: Tab Management ----------------
     /// 已打开的标签页列表
     pub tabs: Vec<TabItem>,
     /// 当前激活的标签页 ID (Subject ID)
     pub active_tab_id: Option<i32>,
 
-    // ---------- SHOW ABOUT --------------------------------
+    // ---------- SHOW ABOUT ---------------------------------
     pub show_about: bool,
 
     // -------- just for test ---------------
@@ -226,7 +230,7 @@ impl Models {
     // --- Action 2: 确认导入 (Preview -> DB) ---
     pub fn confirm_import(&mut self, cx: &mut Context<Self>) {
         // 获取数据所有权
-        if let Some(mut data) = self.import_preview_state.import_preview_data.take() {
+        if let Some(data) = self.import_preview_state.import_preview_data.take() {
             // 【关键修改】根据选择模式过滤数据
             let final_data = if self.import_preview_state.is_selection_mode_enabled {
                 // 如果是选择模式，只保留被选中的行
@@ -539,6 +543,13 @@ impl GroupingState {
     }
 }
 
+// [新增] 历史记录的显示模式枚举
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum HistoryViewMode {
+    Timeline,     // 时间线模式
+    GroupByField, // 按字段分组模式
+}
+
 /// 单个标签页的状态
 #[derive(Clone, Debug)]
 pub struct TabItem {
@@ -555,6 +566,13 @@ pub struct TabItem {
     // Key: field_key (e.g., "email", "age")
     // Value: Entity<InputState>
     pub input_states: HashMap<String, Entity<InputState>>,
+    // ---------- CHANGE LOG PANEL ---------------------------
+    /// 控制右侧历史记录面板的显示/隐藏
+    pub is_inspector_open: bool, // 控制右侧面板显隐
+    /// 历史记录显示模式
+    pub inspector_mode: HistoryViewMode,
+    /// 历史记录数据缓存。None 表示尚未加载，Some 表示已加载
+    pub history_logs: Option<Vec<ChangeLogEntry>>, // 缓存日志数据
 }
 
 impl TabItem {
@@ -569,6 +587,9 @@ impl TabItem {
             is_dirty: false,
             input_states: HashMap::new(),
             is_editing: false,
+            is_inspector_open: true,
+            history_logs: None,
+            inspector_mode: HistoryViewMode::Timeline,
         }
     }
 

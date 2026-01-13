@@ -28,8 +28,8 @@ pub struct SubjectRow {
 }
 
 /// Change log data struct
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ChangeLog {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChangeLogEntry {
     pub id: i32,
     pub subject_id: Option<i32>,
     pub action_type: String, // 'CREATE', 'UPDATE', 'DELETE'

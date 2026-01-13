@@ -1,6 +1,6 @@
 // src/backend/ops.rs
 
-use crate::backend::db::models::Subject;
+use crate::backend::db::models::{ChangeLogEntry, Subject};
 use anyhow::{Context, Result};
 use pinyin::ToPinyin;
 use rusqlite::{Connection, OptionalExtension, ToSql, Transaction, params};
@@ -510,6 +510,34 @@ impl DataService {
 
         tx.commit()?;
         Ok(())
+    }
+
+    /// 获取指定 Subject 的所有变更历史，按时间倒序排列
+    pub fn fetch_change_history(conn: &Connection, subject_id: i32) -> Result<Vec<ChangeLogEntry>> {
+        let mut stmt = conn.prepare(
+            "SELECT id, subject_id, action_type, field_key, old_value, new_value, created_at
+                 FROM change_log
+                 WHERE subject_id = ?
+                 ORDER BY created_at DESC",
+        )?;
+
+        let rows = stmt.query_map(params![subject_id], |row| {
+            Ok(ChangeLogEntry {
+                id: row.get(0)?,
+                subject_id: row.get(1)?,
+                action_type: row.get(2)?,
+                field_key: row.get(3)?,
+                old_value: row.get(4)?,
+                new_value: row.get(5)?,
+                created_at: row.get(6)?,
+            })
+        })?;
+
+        let mut history = Vec::new();
+        for row in rows {
+            history.push(row?);
+        }
+        Ok(history)
     }
 
     // ========================================================================

@@ -1,11 +1,11 @@
 // src/ui/detail_panel.rs
 
 use gpui::{
-    AnyElement, App, AppContext, Context, Entity, FocusHandle, IntoElement, KeyBinding, Render,
-    SharedString, Subscription, Window, div, prelude::*, px,
+    AnyElement, App, AppContext, AsyncApp, Context, Entity, FocusHandle, IntoElement, KeyBinding,
+    Render, SharedString, Subscription, Window, div, prelude::*, px,
 };
 use gpui_component::{
-    ActiveTheme, Disableable, Icon, IconName,
+    ActiveTheme, Disableable, Icon, IconName, Selectable, Sizable,
     button::{Button, ButtonVariants},
     h_flex,
     input::{Input, InputEvent, InputState},
@@ -15,7 +15,10 @@ use gpui_component::{
 use serde_json::Value;
 use std::collections::BTreeMap;
 
-use crate::ui::models::{GlobalAppState, TabItem};
+use crate::ui::{
+    history_inspector::HistoryInspector,
+    models::{GlobalAppState, HistoryViewMode, TabItem},
+};
 
 // =============================================================================
 //  1. Actions (定义面板专属动作)
@@ -24,12 +27,14 @@ use crate::ui::models::{GlobalAppState, TabItem};
 gpui::actions!(
     detail_panel,
     [
-        SaveActiveTab,
-        CloseActiveTab,
-        NextTab,
-        PrevTab,
-        ToggleEditMode,
-        CancelEdit
+        SaveActiveTab,       // Save the info detail tab
+        CloseActiveTab,      // Close the info detail tab
+        NextTab,             // Into next info tab
+        PrevTab,             // Into prev info tab
+        ToggleEditMode,      // Toggle the edit mode -- edit <-> readonly
+        CancelEdit,          // Stop to edit
+        ToggleInspector,     // Toggle to open the inspector
+        SwitchInspectorMode  // Switch the inspector show mode
     ]
 );
 
@@ -55,11 +60,13 @@ impl DetailPanel {
             cx.bind_keys([
                 KeyBinding::new("ctrl-s", SaveActiveTab, None),
                 KeyBinding::new("ctrl-w", CloseActiveTab, None),
-                // 类似浏览器的标签切换体验
                 KeyBinding::new("right", NextTab, None),
                 KeyBinding::new("left", PrevTab, None),
                 KeyBinding::new("ctrl-e", ToggleEditMode, None),
                 KeyBinding::new("escape", CancelEdit, None),
+                // History panel
+                KeyBinding::new("ctrl-h", ToggleInspector, None),
+                KeyBinding::new("ctrl-l", SwitchInspectorMode, None),
             ]);
 
             Self {
@@ -77,46 +84,144 @@ impl DetailPanel {
     fn action_save(&mut self, _: &SaveActiveTab, _: &mut Window, cx: &mut Context<Self>) {
         let global = cx.global::<GlobalAppState>().0.clone();
 
-        // 1. 在 Model 中检查并获取需要保存的数据
+        // 1. 获取需要保存的数据
         let save_task = global.update(cx, |model, cx| {
             if let Some(tab) = model.get_active_tab_mut() {
                 if tab.is_dirty {
                     let id = tab.subject_id;
-                    // 克隆数据准备传给后台线程
                     let new_attrs = tab.working_attributes.clone();
-
-                    // 乐观更新：立即在 UI 上标记为“已保存”，提升用户体感速度
                     tab.mark_saved();
-                    cx.notify();
-
+                    cx.notify(); // 乐观更新 UI
                     return Some((id, new_attrs, model.get_db_manager()));
                 }
             }
             None
         });
 
-        // 2. 只有当确实需要保存时，才启动后台任务
-        // [修正] 使用 background_executor 避免 AsyncFnOnce 生命周期问题，
-        // 因为我们不需要在这个 async 块里操作 UI，只需要操作 DB。
+        // 2. 异步执行 DB 操作
         if let Some((id, new_attrs, db_manager)) = save_task {
-            cx.background_executor()
-                .spawn(async move {
-                    // 将 serde_json::Map 转换为 HashMap
-                    let updates: std::collections::HashMap<String, Value> =
-                        new_attrs.into_iter().collect();
+            // 使用 cx.spawn 获取 AsyncWindowContext，它拥有 update 方法
+            cx.spawn(async move |_this, cx| {
+                let updates: std::collections::HashMap<String, Value> =
+                    new_attrs.into_iter().collect();
 
-                    // 执行数据库更新
-                    if let Ok(mut conn) = db_manager.get_conn() {
-                        match crate::backend::db::ops::DataService::update_fields(
-                            &mut conn, id, updates,
-                        ) {
-                            Ok(_) => println!(">>> [DB] Subject {} saved successfully.", id),
-                            Err(e) => eprintln!(">>> [DB Error] Save failed: {}", e),
+                // 2.1 这里的代码运行在 Main Thread，但我们把 heavy IO 放到 background
+                let result = cx
+                    .background_executor()
+                    .spawn(async move {
+                        if let Ok(mut conn) = db_manager.get_conn() {
+                            // 执行更新
+                            let _ = crate::backend::db::ops::DataService::update_fields(
+                                &mut conn, id, updates,
+                            );
+                            // [Fix]: 立即拉取最新的 History
+                            let new_history =
+                                crate::backend::db::ops::DataService::fetch_change_history(
+                                    &conn, id,
+                                )
+                                .ok();
+                            return Some(new_history);
                         }
-                    }
-                })
-                .detach();
+                        None
+                    })
+                    .await;
+
+                // 2.2 回到 UI 线程更新 Model
+                if let Some(new_logs) = result {
+                    cx.update(|cx| {
+                        let global = cx.global::<GlobalAppState>().0.clone();
+                        global.update(cx, |model, cx| {
+                            if let Some(tab) = model.tabs.iter_mut().find(|t| t.subject_id == id) {
+                                tab.history_logs = new_logs;
+                                cx.notify(); // [重要] 触发重绘，Inspector 将显示新记录
+                            }
+                        });
+                    })
+                    .ok();
+                }
+            })
+            .detach();
         }
+    }
+
+    /// 切换右侧检查器面板的开关
+    fn action_toggle_inspector(
+        &mut self,
+        _: &ToggleInspector,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let global = cx.global::<GlobalAppState>().0.clone();
+
+        // 1. 同步更新开关状态
+        let load_info = global.update(cx, |model, _| {
+            if let Some(tab) = model.get_active_tab_mut() {
+                tab.is_inspector_open = !tab.is_inspector_open;
+                // 如果打开面板且数据为空，返回 ID 以便加载
+                if tab.is_inspector_open && tab.history_logs.is_none() {
+                    return Some((tab.subject_id, model.get_db_manager()));
+                }
+            }
+            None
+        });
+
+        // 立即通知 UI 重新渲染 (打开/关闭面板动画)
+        cx.notify();
+
+        // 2. 如果需要加载数据
+        if let Some((subject_id, db_manager)) = load_info {
+            cx.spawn(async move |this, cx| {
+                // 在后台线程获取数据
+                let result = cx
+                    .background_executor()
+                    .spawn(async move {
+                        if let Ok(conn) = db_manager.get_conn() {
+                            return crate::backend::db::ops::DataService::fetch_change_history(
+                                &conn, subject_id,
+                            )
+                            .ok();
+                        }
+                        None
+                    })
+                    .await;
+
+                // [关键修复] 回到主线程更新 Model 并 强制 UI 重绘
+                // 使用 cx.update (ViewContext) 而不是 cx.update_global，
+                // 这样我们可以直接访问 DetailPanel 的上下文来触发 notify
+                let _ = cx.update(|cx| {
+                    let global = cx.global::<GlobalAppState>().0.clone();
+                    global.update(cx, |model, cx| {
+                        if let Some(tab) =
+                            model.tabs.iter_mut().find(|t| t.subject_id == subject_id)
+                        {
+                            tab.history_logs = result;
+                            // 这里通知的是 Global Model 的订阅者
+                            cx.notify();
+                        }
+                    });
+                });
+            })
+            .detach();
+        }
+    }
+
+    /// 切换历史记录视图模式
+    fn action_switch_inspector_mode(
+        &mut self,
+        _: &SwitchInspectorMode,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let global = cx.global::<GlobalAppState>().0.clone();
+        global.update(cx, |model, cx| {
+            if let Some(tab) = model.get_active_tab_mut() {
+                tab.inspector_mode = match tab.inspector_mode {
+                    HistoryViewMode::Timeline => HistoryViewMode::GroupByField,
+                    HistoryViewMode::GroupByField => HistoryViewMode::Timeline,
+                };
+                cx.notify();
+            }
+        });
     }
 
     /// 切换编辑模式 (只读 <-> 编辑)
@@ -364,100 +469,225 @@ impl DetailPanel {
             )
     }
 
-    /// 渲染编辑区域
-    fn render_editor(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let global_handle = cx.global::<GlobalAppState>().0.clone();
+    // /// 渲染编辑区域
+    // fn render_editor(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    //     let global_handle = cx.global::<GlobalAppState>().0.clone();
 
-        // 1. 获取当前 Tab 的数据快照 (Copy-on-write 思想，尽量减少锁的持有时间)
-        let (active_tab_data, has_tabs) = {
-            let global = global_handle.read(cx);
-            if let Some(tab) = global.get_active_tab() {
-                // 这里我们假设 TabItem 实现了 Clone (Entity 是 cheap clone 的)
-                (Some(tab.clone()), true)
-            } else {
-                (None, !global.tabs.is_empty())
-            }
-        };
+    //     // 1. 获取当前 Tab 的数据快照 (Copy-on-write 思想，尽量减少锁的持有时间)
+    //     let (active_tab_data, has_tabs) = {
+    //         let global = global_handle.read(cx);
+    //         if let Some(tab) = global.get_active_tab() {
+    //             // 这里我们假设 TabItem 实现了 Clone (Entity 是 cheap clone 的)
+    //             (Some(tab.clone()), true)
+    //         } else {
+    //             (None, !global.tabs.is_empty())
+    //         }
+    //     };
 
-        // 2. 空状态渲染
-        if !has_tabs || active_tab_data.is_none() {
-            return div()
-                .flex()
-                .size_full()
-                .items_center()
-                .justify_center()
-                .bg(cx.theme().colors.background)
-                .child(
-                    v_flex()
-                        .gap(px(16.0))
-                        .items_center()
-                        .child(
-                            Icon::new(IconName::LayoutDashboard)
-                                .size(px(64.0))
-                                .text_color(cx.theme().colors.border),
-                        )
-                        .child(
-                            Label::new("No User Selected")
-                                .text_xl()
-                                .font_weight(gpui::FontWeight::BOLD)
-                                .text_color(cx.theme().colors.muted_foreground),
-                        )
-                        .child(
-                            Label::new("Select a user from the sidebar to view details.")
-                                .text_base()
-                                .text_color(cx.theme().colors.muted_foreground),
-                        ),
-                )
-                .into_any_element();
-        }
+    //     // 2. 空状态渲染
+    //     if !has_tabs || active_tab_data.is_none() {
+    //         return div()
+    //             .flex()
+    //             .size_full()
+    //             .items_center()
+    //             .justify_center()
+    //             .bg(cx.theme().colors.background)
+    //             .child(
+    //                 v_flex()
+    //                     .gap(px(16.0))
+    //                     .items_center()
+    //                     .child(
+    //                         Icon::new(IconName::LayoutDashboard)
+    //                             .size(px(64.0))
+    //                             .text_color(cx.theme().colors.border),
+    //                     )
+    //                     .child(
+    //                         Label::new("No User Selected")
+    //                             .text_xl()
+    //                             .font_weight(gpui::FontWeight::BOLD)
+    //                             .text_color(cx.theme().colors.muted_foreground),
+    //                     )
+    //                     .child(
+    //                         Label::new("Select a user from the sidebar to view details.")
+    //                             .text_base()
+    //                             .text_color(cx.theme().colors.muted_foreground),
+    //                     ),
+    //             )
+    //             .into_any_element();
+    //     }
 
-        // 3. 准备渲染数据
-        let mut active_tab = active_tab_data.unwrap();
-        let subject_id = active_tab.subject_id;
-        let tab_name = active_tab.name.clone();
-        let is_dirty = active_tab.is_dirty;
-        let is_editing = active_tab.is_editing; // [关键] 获取编辑模式状态
+    //     // 3. 准备渲染数据
+    //     let mut active_tab = active_tab_data.unwrap();
+    //     let subject_id = active_tab.subject_id;
+    //     let tab_name = active_tab.name.clone();
+    //     let is_dirty = active_tab.is_dirty;
+    //     let is_editing = active_tab.is_editing; // [关键] 获取编辑模式状态
 
-        let fields: BTreeMap<String, Value> = active_tab
+    //     let fields: BTreeMap<String, Value> = active_tab
+    //         .working_attributes
+    //         .iter()
+    //         .map(|(k, v)| (k.clone(), v.clone()))
+    //         .collect();
+
+    //     // 4. 预先生成字段 UI 列表 (解决闭包生命周期问题)
+    //     let mut field_elements = Vec::new();
+
+    //     for (key, value) in fields {
+    //         // 根据 is_editing 状态决定渲染只读 Label 还是可编辑 Input
+    //         let element = if is_editing {
+    //             self.render_editable_field(&mut active_tab, &key, value, window, cx)
+    //         } else {
+    //             self.render_readonly_field(&key, value, cx)
+    //         };
+    //         field_elements.push(element);
+    //     }
+
+    //     // 5. 将新创建的 InputState 同步回 Model (如果有的话)
+    //     // 这一步确保我们在 render 期间创建的 Entity 不会丢失
+    //     // 注意：这可能导致一次额外的 notify，但在 DetailView 场景下性能是可以接受的
+    //     global_handle.update(cx, |m, _| {
+    //         if let Some(t) = m.get_active_tab_mut() {
+    //             // 简单的合并策略：如果本地有新创建的，就放进去
+    //             for (k, v) in active_tab.input_states {
+    //                 if !t.input_states.contains_key(&k) {
+    //                     t.input_states.insert(k, v);
+    //                 }
+    //             }
+    //         }
+    //     });
+
+    //     // 6. 渲染主体布局
+    //     div()
+    //         .size_full()
+    //         .bg(cx.theme().colors.background)
+    //         .flex()
+    //         .flex_col()
+    //         // --- Toolbar ---
+    //         .child(
+    //             h_flex()
+    //                 .w_full()
+    //                 .h(px(48.0))
+    //                 .px(px(24.0))
+    //                 .border_b_1()
+    //                 .border_color(cx.theme().colors.border)
+    //                 .items_center()
+    //                 .justify_between()
+    //                 // 标题
+    //                 .child(
+    //                     h_flex().gap_2().items_center().child(
+    //                         Label::new(tab_name)
+    //                             .text_xl()
+    //                             .font_weight(gpui::FontWeight::BOLD),
+    //                     ),
+    //                 )
+    //                 // 操作区
+    //                 .child(
+    //                     h_flex()
+    //                         .gap(px(12.0))
+    //                         // [新增] 锁定/解锁按钮
+    //                         .child(
+    //                             Button::new(SharedString::from("toggle-edit"))
+    //                                 .icon(if is_editing {
+    //                                     IconName::Star
+    //                                 } else {
+    //                                     IconName::StarOff
+    //                                 }) // 🔓 / 🔒
+    //                                 .label(if is_editing { "Editing" } else { "Read Only" })
+    //                                 .when(is_editing, |btn| btn.ghost()) // 编辑态用 Ghost，突出右边的保存
+    //                                 .when(!is_editing, |btn| btn.bg(cx.theme().colors.secondary)) // 只读态用 Secondary
+    //                                 .on_click(cx.listener(|this, _, window, cx| {
+    //                                     this.action_toggle_edit(&ToggleEditMode, window, cx);
+    //                                 })),
+    //                         )
+    //                         // 保存按钮 (仅在编辑且有修改时高亮，或只在编辑模式显示)
+    //                         .child(
+    //                             Button::new(SharedString::from("save-btn"))
+    //                                 .label("Save")
+    //                                 .icon(IconName::Sun)
+    //                                 .primary()
+    //                                 // 逻辑：不在编辑模式下禁用，或者没有脏数据禁用
+    //                                 .disabled(!is_editing || !is_dirty)
+    //                                 .on_click(cx.listener(|this, _, window, cx| {
+    //                                     this.action_save(&SaveActiveTab, window, cx);
+    //                                 })),
+    //                         )
+    //                         // 取消按钮 (仅编辑模式显示)
+    //                         .when(is_editing, |div| {
+    //                             div.child(
+    //                                 Button::new(SharedString::from("cancel-btn"))
+    //                                     .label("Cancel")
+    //                                     .ghost()
+    //                                     .on_click(cx.listener(|this, _, window, cx| {
+    //                                         this.action_cancel_edit(&CancelEdit, window, cx);
+    //                                     })),
+    //                             )
+    //                         }),
+    //                 ),
+    //         )
+    //         // --- Form Scroll Area ---
+    //         .child(
+    //             div()
+    //                 .id("tab-scroll-area")
+    //                 .flex_1()
+    //                 .relative()
+    //                 .overflow_y_scroll()
+    //                 .child(
+    //                     div()
+    //                         .p(px(32.0))
+    //                         .max_w(px(800.0))
+    //                         .mx_auto()
+    //                         .child(v_flex().gap(px(20.0)).children(field_elements)),
+    //                 ),
+    //         )
+    //         .into_any_element()
+    // }
+
+    /// 渲染左侧表单区域
+    fn render_form_area(
+        &mut self,
+        tab: &mut TabItem,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let tab_name = tab.name.clone();
+        let is_dirty = tab.is_dirty;
+        let is_editing = tab.is_editing;
+        let is_inspector_open = tab.is_inspector_open;
+
+        let fields: BTreeMap<String, Value> = tab
             .working_attributes
             .iter()
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
 
-        // 4. 预先生成字段 UI 列表 (解决闭包生命周期问题)
         let mut field_elements = Vec::new();
-
         for (key, value) in fields {
-            // 根据 is_editing 状态决定渲染只读 Label 还是可编辑 Input
             let element = if is_editing {
-                self.render_editable_field(&mut active_tab, &key, value, window, cx)
+                self.render_editable_field(tab, &key, value, window, cx)
             } else {
                 self.render_readonly_field(&key, value, cx)
             };
             field_elements.push(element);
         }
 
-        // 5. 将新创建的 InputState 同步回 Model (如果有的话)
-        // 这一步确保我们在 render 期间创建的 Entity 不会丢失
-        // 注意：这可能导致一次额外的 notify，但在 DetailView 场景下性能是可以接受的
+        // 同步 input states
+        let global_handle = cx.global::<GlobalAppState>().0.clone();
         global_handle.update(cx, |m, _| {
             if let Some(t) = m.get_active_tab_mut() {
-                // 简单的合并策略：如果本地有新创建的，就放进去
-                for (k, v) in active_tab.input_states {
-                    if !t.input_states.contains_key(&k) {
-                        t.input_states.insert(k, v);
+                for (k, v) in tab.input_states.iter() {
+                    if !t.input_states.contains_key(k) {
+                        t.input_states.insert(k.clone(), v.clone());
                     }
                 }
             }
         });
 
-        // 6. 渲染主体布局
         div()
+            .flex_1()
             .size_full()
-            .bg(cx.theme().colors.background)
             .flex()
             .flex_col()
-            // --- Toolbar ---
+            // Toolbar
             .child(
                 h_flex()
                     .w_full()
@@ -467,7 +697,6 @@ impl DetailPanel {
                     .border_color(cx.theme().colors.border)
                     .items_center()
                     .justify_between()
-                    // 标题
                     .child(
                         h_flex().gap_2().items_center().child(
                             Label::new(tab_name)
@@ -475,54 +704,59 @@ impl DetailPanel {
                                 .font_weight(gpui::FontWeight::BOLD),
                         ),
                     )
-                    // 操作区
                     .child(
                         h_flex()
                             .gap(px(12.0))
-                            // [新增] 锁定/解锁按钮
+                            // 检查器开关
+                            .child(
+                                Button::new(SharedString::from("toggle-history"))
+                                    .icon(IconName::Ellipsis)
+                                    .selected(is_inspector_open)
+                                    .ghost()
+                                    .on_click(cx.listener(|this, _, w, c| {
+                                        this.action_toggle_inspector(&ToggleInspector, w, c)
+                                    })),
+                            )
                             .child(
                                 Button::new(SharedString::from("toggle-edit"))
                                     .icon(if is_editing {
                                         IconName::Star
                                     } else {
                                         IconName::StarOff
-                                    }) // 🔓 / 🔒
+                                    })
                                     .label(if is_editing { "Editing" } else { "Read Only" })
-                                    .when(is_editing, |btn| btn.ghost()) // 编辑态用 Ghost，突出右边的保存
-                                    .when(!is_editing, |btn| btn.bg(cx.theme().colors.secondary)) // 只读态用 Secondary
-                                    .on_click(cx.listener(|this, _, window, cx| {
-                                        this.action_toggle_edit(&ToggleEditMode, window, cx);
+                                    .when(is_editing, |btn| btn.ghost())
+                                    .when(!is_editing, |btn| btn.bg(cx.theme().colors.secondary))
+                                    .on_click(cx.listener(|this, _, w, c| {
+                                        this.action_toggle_edit(&ToggleEditMode, w, c)
                                     })),
                             )
-                            // 保存按钮 (仅在编辑且有修改时高亮，或只在编辑模式显示)
                             .child(
                                 Button::new(SharedString::from("save-btn"))
                                     .label("Save")
                                     .icon(IconName::Sun)
                                     .primary()
-                                    // 逻辑：不在编辑模式下禁用，或者没有脏数据禁用
-                                    .disabled(!is_editing || !is_dirty)
-                                    .on_click(cx.listener(|this, _, window, cx| {
-                                        this.action_save(&SaveActiveTab, window, cx);
+                                    .disabled(!is_dirty)
+                                    .on_click(cx.listener(|this, _, w, c| {
+                                        this.action_save(&SaveActiveTab, w, c)
                                     })),
                             )
-                            // 取消按钮 (仅编辑模式显示)
                             .when(is_editing, |div| {
                                 div.child(
                                     Button::new(SharedString::from("cancel-btn"))
                                         .label("Cancel")
                                         .ghost()
-                                        .on_click(cx.listener(|this, _, window, cx| {
-                                            this.action_cancel_edit(&CancelEdit, window, cx);
+                                        .on_click(cx.listener(|this, _, w, c| {
+                                            this.action_cancel_edit(&CancelEdit, w, c)
                                         })),
                                 )
                             }),
                     ),
             )
-            // --- Form Scroll Area ---
+            // Form content
             .child(
                 div()
-                    .id("tab-scroll-area")
+                    .id("form-el")
                     .flex_1()
                     .relative()
                     .overflow_y_scroll()
@@ -647,7 +881,13 @@ impl DetailPanel {
 
 impl Render for DetailPanel {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        // [修正] 捕获 focus_handle 供闭包使用
+        // 获取当前数据快照
+        let global_read = cx.global::<GlobalAppState>().0.read(cx);
+        let (active_tab_clone, has_active) = if let Some(tab) = global_read.get_active_tab() {
+            (Some(tab.clone()), true)
+        } else {
+            (None, false)
+        };
 
         div()
             .size_full()
@@ -662,7 +902,65 @@ impl Render for DetailPanel {
             .on_action(cx.listener(Self::action_prev_tab))
             .on_action(cx.listener(Self::action_toggle_edit))
             .on_action(cx.listener(Self::action_cancel_edit))
+            .on_action(cx.listener(Self::action_toggle_inspector))
+            .on_action(cx.listener(Self::action_switch_inspector_mode))
             .child(self.render_tab_bar(cx))
-            .child(self.render_editor(window, cx))
+            // [双栏布局实现]
+            .child(div().flex_1().flex().overflow_hidden().children({
+                if has_active {
+                    let mut tab = active_tab_clone.unwrap();
+                    let show_inspector = tab.is_inspector_open;
+                    let inspector_mode = tab.inspector_mode;
+
+                    vec![
+                        // 1. 左栏：表单
+                        self.render_form_area(&mut tab, window, cx)
+                            .into_any_element(),
+                        // 2. 右栏：历史检查器 (条件渲染)
+                        if show_inspector {
+                            // 头部增加切换按钮
+                            let content = HistoryInspector::render(
+                                tab.history_logs.as_ref(),
+                                tab.inspector_mode,
+                                cx,
+                            );
+
+                            v_flex()
+                                .h_full()
+                                .child(
+                                    // 给 Inspector 顶部加个切换模式的小按钮
+                                    div().absolute().top(px(12.0)).right(px(12.0)).child(
+                                        Button::new("mode-switch")
+                                            .icon(IconName::Replace)
+                                            .ghost()
+                                            .small()
+                                            .tooltip("Switch View Mode")
+                                            .on_click(cx.listener(|this, _, w, c| {
+                                                this.action_switch_inspector_mode(
+                                                    &SwitchInspectorMode,
+                                                    w,
+                                                    c,
+                                                )
+                                            })),
+                                    ),
+                                )
+                                .child(content)
+                                .into_any_element()
+                        } else {
+                            div().into_any_element()
+                        },
+                    ]
+                } else {
+                    vec![
+                        div()
+                            .size_full()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .child(Label::new("No Selection").text_xl())
+                            .into_any_element(),
+                    ]
+                }
+            }))
     }
 }
