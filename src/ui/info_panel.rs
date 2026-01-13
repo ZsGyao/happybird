@@ -14,8 +14,8 @@ use gpui::{
     UniformListScrollHandle, Window, div, point, prelude::FluentBuilder, px, size, uniform_list,
 };
 use gpui_component::{
-    ActiveTheme, Icon, IconName, Sizable,
-    button::{Button, ButtonVariants},
+    ActiveTheme, Icon, IconName, Sizable, StyledExt,
+    button::{Button, ButtonCustomVariant, ButtonVariants},
     h_flex,
     label::Label,
     list::ListItem,
@@ -460,8 +460,9 @@ impl InfoPanel {
             .items_center()
             .child(
                 Label::new("Group by:")
-                    .text_xs()
-                    .text_color(cx.theme().colors.muted_foreground),
+                    .text_sm()
+                    .text_center()
+                    .text_color(cx.theme().colors.foreground),
             )
             // 1. 渲染已激活的分组 Tag (这部分代码很好，保持不变)
             .children(active_keys.iter().map(|key| {
@@ -472,7 +473,7 @@ impl InfoPanel {
                     .gap(px(2.0))
                     .bg(cx.theme().colors.secondary)
                     .rounded_md()
-                    .px(px(4.0))
+                    .px(px(6.0))
                     .py(px(2.0))
                     .border_1()
                     .border_color(cx.theme().colors.border)
@@ -481,7 +482,7 @@ impl InfoPanel {
                         div()
                             .id(SharedString::from(format!("del-{}", key)))
                             .cursor_pointer()
-                            .child(Icon::new(IconName::Close).size(px(10.0)))
+                            .child(Icon::new(IconName::Close).size(px(12.0)))
                             .hover(|s| s.text_color(cx.theme().colors.link_hover))
                             .on_click(cx.listener(move |this, _, _window, cx| {
                                 this.action_remove_grouping(key_clone.clone(), cx);
@@ -681,15 +682,21 @@ impl Render for InfoPanel {
         const INDENT_SIZE: Pixels = px(16.0);
         const GUIDE_OFFSET: Pixels = px(16.0);
 
+        let custom_bnt = ButtonCustomVariant::new(cx)
+            .color(cx.theme().background)
+            .foreground(cx.theme().foreground)
+            .border(cx.theme().border)
+            .active(cx.theme().secondary_active)
+            .hover(cx.theme().background.opacity(0.1));
+
         div()
             .id("info-panel")
             .size_full()
             .flex()
             .flex_col()
+            .p_4()
             .overflow_hidden()
             .bg(cx.theme().colors.background)
-            .p(px(13.0))
-            .gap(px(8.0))
             // ------ search
             .child(div().flex_shrink_0().w_full().child(self.search.clone()))
             // ------ group control
@@ -784,7 +791,10 @@ impl Render for InfoPanel {
                     .child(
                         Button::new("Import-button")
                             .w_full()
+                            .rounded_none()
+                            .custom(custom_bnt)
                             .label("Import New Data")
+                            .text_sm()
                             .on_click(|_, _, cx| {
                                 // let directories = cx.can_select_mixed_files_and_dirs();
                                 let task = cx.prompt_for_paths(PathPromptOptions {
@@ -846,14 +856,24 @@ impl Render for InfoPanel {
                             .gap_2()
                             .h(px(32.0))
                             .child(
-                                div()
-                                    .flex_1()
-                                    .child(Button::new("Export").w_full().label("Export")),
+                                div().flex_1().child(
+                                    Button::new("export")
+                                        .w_full()
+                                        .rounded_none()
+                                        .custom(custom_bnt)
+                                        .label("Export")
+                                        .text_xl(),
+                                ),
                             )
                             .child(
-                                div()
-                                    .flex_1()
-                                    .child(Button::new("Config").w_full().label("Config")),
+                                div().flex_1().child(
+                                    Button::new("config")
+                                        .w_full()
+                                        .rounded_none()
+                                        .custom(custom_bnt)
+                                        .label("Config")
+                                        .text_xl(),
+                                ),
                             ), // .child(
                                //     div().flex_1().child(
                                //         Button::new("Test Button")

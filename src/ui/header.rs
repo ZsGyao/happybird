@@ -20,15 +20,15 @@ impl Render for Header {
         let decorations = window.window_decorations();
 
         div()
+            .id("titlebar")
             .flex()
             .w_full()
             .text_sm()
             .min_h(px(37.0))
             .max_h(px(37.0))
-            .bg(cx.theme().colors.secondary)
+            .bg(cx.theme().colors.background)
             .text_sm()
             .border_b_1()
-            .id("titlebar")
             .border_color(cx.theme().colors.border)
             .window_control_area(WindowControlArea::Drag)
             .when(cfg!(not(target_os = "windows")), |this| {
@@ -83,7 +83,7 @@ impl Render for Header {
                                     .corner_radii(Corners::all(px(8.0))),
                             )
                             .font_bold()
-                            .child("Happybird")
+                            .child("HappyBird")
                             .mr(px(6.0)),
                     )
                 },
@@ -111,7 +111,7 @@ pub enum WindowButton {
 impl RenderOnce for WindowButton {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let (bg, hover, active) = (
-            cx.theme().colors.title_bar,
+            cx.theme().colors.background,
             cx.theme().colors.primary_hover,
             cx.theme().colors.primary_active,
         );

@@ -1,15 +1,18 @@
 use crate::ui::hb_icons::HappyBirdIcons;
 use crate::ui::models::GlobalAppState;
 use crate::zlog::log_impl::debug;
-use gpui::{App, AppContext, Context, Entity, Render, Subscription, Window};
+use gpui::{
+    App, AppContext, Context, Entity, ParentElement, Render, Styled, Subscription, Window, div, px,
+};
 use gpui_component::{
-    Icon,
+    ActiveTheme, Icon,
     input::{Input, InputEvent, InputState},
 };
 
 pub struct SearchPanel {
     search_input: Entity<InputState>,
     _search_subscription: Subscription,
+    is_focused: bool, // [新增] 用于记录焦点状态
 }
 
 impl SearchPanel {
@@ -25,22 +28,26 @@ impl SearchPanel {
                 |this: &mut Self, state, event, _window, cx| match event {
                     InputEvent::Change => {
                         let query = state.read(cx).value();
-
-                        debug!("Input changed: {}", query);
                     }
                     InputEvent::PressEnter { .. } => {
-                        debug!("InputEvent::PressEnter");
                         let query = state.read(cx).value();
 
                         this.perform_search(query.to_string(), cx);
                     }
-                    InputEvent::Focus => debug!("Input focused"),
-                    InputEvent::Blur => debug!("Input blurred"),
+                    InputEvent::Focus => {
+                        this.is_focused = true;
+                        cx.notify(); // 通知视图重绘以更新边框颜色
+                    }
+                    InputEvent::Blur => {
+                        this.is_focused = false;
+                        cx.notify(); // 通知视图重绘恢复边框颜色
+                    }
                 },
             );
             Self {
                 search_input,
                 _search_subscription,
+                is_focused: false,
             }
         })
     }
@@ -63,8 +70,23 @@ impl Render for SearchPanel {
     fn render(
         &mut self,
         _window: &mut gpui::Window,
-        _cx: &mut gpui::Context<Self>,
+        cx: &mut gpui::Context<Self>,
     ) -> impl gpui::IntoElement {
-        Input::new(&self.search_input).prefix(Icon::new(HappyBirdIcons::Search))
+        let border_color = if self.is_focused {
+            cx.theme().secondary_active // 或者是你主题中的 success 颜色，例如 cx.theme().success
+        } else {
+            cx.theme().border // 默认边框颜色，或者是 gpui::transparent_black()
+        };
+
+        div()
+            .bg(cx.theme().secondary)
+            .border(px(1.2))
+            .border_color(border_color)
+            .m_2()
+            .child(
+                Input::new(&self.search_input)
+                    .appearance(false)
+                    .prefix(Icon::new(HappyBirdIcons::Search)),
+            )
     }
 }

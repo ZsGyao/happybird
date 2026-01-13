@@ -6,7 +6,7 @@ use gpui_component::{Theme, ThemeRegistry};
 use crate::error;
 
 pub fn init(cx: &mut App) {
-    let theme_name = SharedString::from("Alduin");
+    let theme_name = SharedString::from("Happybird");
     // Load and watch themes from ./themes directory
     if let Err(err) = ThemeRegistry::watch_dir(PathBuf::from("./themes"), cx, move |cx| {
         if let Some(theme) = ThemeRegistry::global(cx).themes().get(&theme_name).cloned() {

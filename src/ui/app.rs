@@ -87,12 +87,12 @@ impl Render for WindowShadow {
         let mut element = div()
             .id("window-backdrop")
             .key_context("app")
-            .bg(cx.theme().background)
+            .bg(gpui::transparent_black())
             .flex()
             .map(|div| match decorations {
                 gpui::Decorations::Server => div,
                 gpui::Decorations::Client { tiling } => div
-                    .bg(transparent_black())
+                    .bg(gpui::transparent_black())
                     .child(
                         canvas(
                             |_bounds, window, _| {
@@ -186,12 +186,7 @@ impl Render for WindowShadow {
                             .when(!tiling.right, |div| div.border_r(border_size))
                             .when(!tiling.is_tiled(), |div| {
                                 div.shadow(vec![gpui::BoxShadow {
-                                    color: Hsla {
-                                        h: 0.,
-                                        s: 0.,
-                                        l: 0.,
-                                        a: 0.4,
-                                    },
+                                    color: cx.theme().colors.background,
                                     blur_radius: shadow_size / 2.,
                                     spread_radius: px(0.),
                                     offset: point(px(0.0), px(0.0)),
@@ -302,15 +297,7 @@ fn resize_edge(
 }
 
 pub fn run() -> anyhow::Result<()> {
-    // Create database pool
-    // let pool = crate::RUNTIME
-    //     .block_on(create_pool(data_dir.join("library.db")))
-    //     .inspect_err(|error| {
-    //         tracing::error!(?error, "fatal: unable to create database pool");
-    //     })?;
-
     let app = Application::new().with_assets(HappybirdAsset);
-    // let app = Application::new().with_assets(Assets);
 
     app.run(move |cx| {
         // This must be called before using any GPUI Component features.
@@ -326,7 +313,7 @@ pub fn run() -> anyhow::Result<()> {
 
         let win_ops = WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(bounds)), // 设置窗口的初始位置和尺寸
-            window_background: WindowBackgroundAppearance::Opaque, //定义窗口的背景样式: Opaque: 不透明，Transparent：透明，Blurred：毛玻璃
+            window_background: WindowBackgroundAppearance::Transparent, //定义窗口的背景样式: Opaque: 不透明，Transparent：透明，Blurred：毛玻璃
             window_decorations: Some(WindowDecorations::Client), // 控制窗口的“装饰”，即边框、标题栏和标准窗口按钮（关闭、最小化、最大化) Client` 表示**由客户端（也就是你的应用程序）来绘制**这些装饰。这通常用于实现自定义的、非原生外观的标题栏
             window_min_size: Some(size(px(1400.0), px(800.0))),
             titlebar: Some(TitlebarOptions {
