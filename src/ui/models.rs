@@ -276,16 +276,56 @@ impl Models {
                     })
                     .await;
 
-                // ... (回调处理保持不变)
+                // 2. 回到 UI 线程处理更新
                 this.update(cx, |model, cx| {
                     model.import_preview_state.is_importing = false;
+
                     match result {
-                        Ok(_count) => {
-                            // ... 成功逻辑
+                        Ok(affected_ids) => {
+                            // 这里的类型是 Vec<i32>
+                            // A. 刷新左侧列表
                             model.fetch_page(cx, true);
+
+                            // B. [关键修复] 刷新所有受影响的 Tab
+                            if let Ok(conn) = model.db_manager.get_conn() {
+                                // 遍历所有打开的 Tab
+                                for tab in &mut model.tabs {
+                                    // 如果当前 Tab 的 Subject ID 在本次导入/更新列表中
+                                    if affected_ids.contains(&tab.subject_id) {
+                                        // 重新从数据库拉取最新数据
+                                        if let Ok(Some(subject)) =
+                                            DataService::get_subject_by_id(&conn, tab.subject_id)
+                                        {
+                                            // 更新 Tab 数据
+                                            let new_attrs = subject
+                                                .attributes
+                                                .as_object()
+                                                .cloned()
+                                                .unwrap_or_default();
+
+                                            tab.name = subject.name;
+                                            tab.original_attributes = new_attrs.clone();
+                                            // 强制更新当前工作区，覆盖未保存的修改 (符合 "重新导入" 的语义)
+                                            tab.working_attributes = new_attrs;
+                                            tab.is_dirty = false;
+
+                                            // 如果右侧历史面板开着，也顺便刷新一下历史
+                                            if tab.is_inspector_open {
+                                                if let Ok(logs) = DataService::fetch_change_history(
+                                                    &conn,
+                                                    tab.subject_id,
+                                                ) {
+                                                    tab.history_logs = Some(logs);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            cx.notify(); // 通知 UI 重绘
                         }
                         Err(e) => {
-                            // ... 失败逻辑
                             model.import_preview_state.import_error = Some(e.to_string());
                         }
                     }

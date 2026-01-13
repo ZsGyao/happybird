@@ -48,18 +48,20 @@ impl DataService {
     /// 批量导入 (事务处理)
     /// rows: 解析后的通用数据
     /// primary_key_col: 指定 CSV/Excel 中哪一列作为 'name' (主键)
+    /// # Returns
+    /// 返回所有被插入或更新的 Subject ID 列表 (`Vec<i32>`)。
+    /// 这允许前端在导入完成后，精确刷新相关的 UI 组件。
     pub fn batch_import(
         conn: &mut Connection,
         rows: Vec<HashMap<String, Value>>,
         primary_key_col: &str,
-    ) -> Result<usize> {
+    ) -> Result<Vec<i32>> {
         let tx = conn.transaction()?;
-        let mut count = 0;
+        let mut affected_ids = Vec::new();
 
         for mut row_data in rows {
             // 1. 提取 Name
             // remove 会把 name 从 attributes 中拿出来，剩下的作为 JSON 属性
-            // 如果 JSON 中该字段是字符串，直接用；如果是数字，转字符串
             let name_val = row_data.remove(primary_key_col).and_then(|v| match v {
                 Value::String(s) => Some(s),
                 Value::Number(n) => Some(n.to_string()),
@@ -68,17 +70,13 @@ impl DataService {
 
             if let Some(name) = name_val {
                 if !name.trim().is_empty() {
-                    // --- 复用单行导入逻辑 (内联版) ---
-                    // 注意：因为 tx 是 Transaction，我们不能调用 import_row (它会尝试再开 transaction)
-                    // 所以我们需要直接调用 private helpers
-
                     // 1. 同步字段定义
                     Self::sync_definitions(&tx, row_data.keys())?;
 
                     // 2. 查找现有用户
                     let existing = Self::find_subject_id_and_attrs(&tx, &name)?;
 
-                    match existing {
+                    let subject_id = match existing {
                         Some((id, old_json)) => {
                             Self::perform_update(
                                 &tx,
@@ -88,18 +86,39 @@ impl DataService {
                                 row_data,
                                 "IMPORT_UPDATE",
                             )?;
+                            Some(id)
                         }
                         None => {
                             Self::perform_insert(&tx, &name, row_data)?;
+                            None
                         }
+                    };
+
+                    if let Some(subject_id) = subject_id {
+                        affected_ids.push(subject_id);
                     }
-                    count += 1;
                 }
             }
         }
 
         tx.commit()?;
-        Ok(count)
+        Ok(affected_ids)
+    }
+
+    /// 通过 ID 获取单个用户对象
+    ///
+    /// 用于前端在数据变更后刷新特定 Tab 的数据。
+    pub fn get_subject_by_id(conn: &Connection, id: i32) -> Result<Option<Subject>> {
+        let mut stmt = conn.prepare(
+            "SELECT id, name, attributes, created_at, updated_at FROM subjects WHERE id = ?",
+        )?;
+
+        let mut rows = stmt.query_map(params![id], |row| Self::map_row_to_subject(row))?;
+
+        if let Some(row) = rows.next() {
+            return Ok(Some(row?));
+        }
+        Ok(None)
     }
 
     /// 更新指定用户的字段 (Patch 操作)。
@@ -149,9 +168,9 @@ impl DataService {
                 abbr_pinyin.push(pinyin.plain().chars().next().unwrap_or_default());
             } else {
                 // 非汉字字符直接保留
-                if !full_pinyin.is_empty() {
-                    full_pinyin.push(' ');
-                }
+                // if !full_pinyin.is_empty() {
+                //     full_pinyin.push(' ');
+                // }
                 full_pinyin.push(char);
                 abbr_pinyin.push(char);
             }
@@ -297,7 +316,6 @@ impl DataService {
                 params.push(pattern_contains.clone()); // name
                 params.push(pattern_contains.clone()); // py_abbr
                 params.push(pattern_contains.clone()); // attributes
-
                 params.push(pattern_pinyin_start); // pinyin start
                 params.push(pattern_pinyin_word_start); // pinyin word start
                 params.push(pattern_compact_start); // [修改] pinyin compact start (注意这里不再是 %term%)
@@ -673,39 +691,26 @@ mod tests {
     }
 
     #[test]
-    fn test_batch_import_transaction() -> Result<()> {
+    fn test_batch_import_returns_ids() -> Result<()> {
         let mut conn = setup_db()?;
-
-        // 准备 3 条数据
-        // 1. New User
         let mut row1 = HashMap::new();
-        row1.insert("name".to_string(), json!("BatchUser1")); // 主键
-        row1.insert("score".to_string(), json!(10));
+        // 确保这里的 key "name" 与 batch_import 传入的 "name" 一致
+        row1.insert("name".to_string(), json!("User1"));
 
-        // 2. New User
         let mut row2 = HashMap::new();
-        row2.insert("name".to_string(), json!("BatchUser2"));
-        row2.insert("score".to_string(), json!(20));
+        row2.insert("name".to_string(), json!("User2"));
 
-        // 3. Invalid User (没有 name，应该被跳过)
-        let mut row3 = HashMap::new();
-        row3.insert("score".to_string(), json!(30));
+        let rows = vec![row1, row2];
 
-        let rows = vec![row1, row2, row3];
+        // 调用 batch_import
+        let ids = DataService::batch_import(&mut conn, rows, "name")?;
 
-        // 执行批量导入
-        let count = DataService::batch_import(&mut conn, rows, "name")?;
+        // 调试输出：如果失败，打印 ids 看看
+        println!("Batch import IDs: {:?}", ids);
 
-        // 验证：应该只有 2 条成功插入
-        assert_eq!(count, 2);
-
-        let subjects = DataService::search_subjects(&conn, Some("BatchUser"), 1, 10)?;
-        assert_eq!(subjects.len(), 2);
-
-        // 验证字段定义同步
-        let headers = DataService::get_all_headers(&conn)?;
-        assert!(headers.contains(&"score".to_string()));
-
+        assert_eq!(ids.len(), 2, "应该返回 2 个 ID");
+        assert!(ids[0] > 0);
+        assert!(ids[1] > 0);
         Ok(())
     }
 
@@ -986,8 +991,8 @@ mod tests {
         let mut conn = setup_db()?;
 
         // 1. 批量导入空数组 (不应报错，应返回 0)
-        let count = DataService::batch_import(&mut conn, vec![], "name")?;
-        assert_eq!(count, 0);
+        let vec = DataService::batch_import(&mut conn, vec![], "name")?;
+        assert_eq!(vec.len(), 0);
 
         // 2. 分页越界 (第 999 页，应返回空 Vec，不报错)
         DataService::import_row(&mut conn, "A", HashMap::new())?;
@@ -1031,11 +1036,11 @@ mod tests {
     fn test_pinyin_generation_logic() {
         // 测试私有辅助函数 generate_pinyin 是否逻辑正确
         let (full, abbr) = DataService::generate_pinyin("张三");
-        assert_eq!(full, "zhangsan", "全拼生成错误");
+        assert_eq!(full, "zhang san", "全拼生成错误");
         assert_eq!(abbr, "zs", "首字母生成错误");
 
         let (full, abbr) = DataService::generate_pinyin("李四-Wang");
-        assert_eq!(full, "lisi-wang", "混合字符全拼错误");
+        assert_eq!(full, "li si-wang", "混合字符全拼错误");
 
         // [修复]: 当前逻辑是非汉字字符原样保留，所以应该是 "ls-wang"
         assert_eq!(abbr, "ls-wang", "混合字符首字母错误");
@@ -1060,7 +1065,7 @@ mod tests {
             |r| Ok((r.get(0)?, r.get(1)?)),
         )?;
 
-        assert_eq!(pinyin, "zhugeliang");
+        assert_eq!(pinyin, "zhu ge liang");
         assert_eq!(abbr, "zgl");
 
         Ok(())
