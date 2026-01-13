@@ -953,11 +953,34 @@ impl Render for DetailPanel {
                 } else {
                     vec![
                         div()
-                            .size_full()
                             .flex()
+                            .size_full()
                             .items_center()
                             .justify_center()
-                            .child(Label::new("No Selection").text_xl())
+                            .bg(cx.theme().colors.background)
+                            .child(
+                                v_flex()
+                                    .gap(px(16.0))
+                                    .items_center()
+                                    .child(
+                                        Icon::new(IconName::LayoutDashboard)
+                                            .size(px(64.0))
+                                            .text_color(cx.theme().colors.border),
+                                    )
+                                    .child(
+                                        Label::new("No User Selected")
+                                            .text_xl()
+                                            .font_weight(gpui::FontWeight::BOLD)
+                                            .text_color(cx.theme().colors.muted_foreground),
+                                    )
+                                    .child(
+                                        Label::new(
+                                            "Select a user from the sidebar to view details.",
+                                        )
+                                        .text_base()
+                                        .text_color(cx.theme().colors.muted_foreground),
+                                    ),
+                            )
                             .into_any_element(),
                     ]
                 }
