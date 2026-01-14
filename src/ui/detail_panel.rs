@@ -160,61 +160,25 @@ impl DetailPanel {
     ) {
         let global = cx.global::<GlobalAppState>().0.clone();
 
-        let task = global.update(cx, |model, cx| {
-            let db_manager = model.get_db_manager();
+        global.update(cx, |model, cx| {
             if let Some(tab) = model.get_active_tab_mut() {
                 tab.is_inspector_open = !tab.is_inspector_open;
 
-                // [修正] 使用 cx.new 创建实体 (充当 View)
+                // 懒加载 View (如果还没有)
                 if tab.inspector_view.is_none() {
                     let subject_id = tab.subject_id;
                     let history_entity = tab.history_entity.clone();
 
+                    // [修正] 不再传递 Window，因为 HistoryInspector::new 改了
                     let view_entity =
                         cx.new(|cx| HistoryInspector::new(window, cx, subject_id, history_entity));
                     tab.inspector_view = Some(view_entity);
                 }
 
-                // 判断是否需要加载数据
-                let need_load = tab.history_entity.read(cx).entries.is_empty();
-
-                if tab.is_inspector_open && need_load {
-                    return Some((tab.subject_id, db_manager, tab.history_entity.clone()));
-                }
+                // 数据已经在 Models::open_tab 预加载了，这里只需通知更新布局
                 cx.notify();
             }
-            None
         });
-
-        // 异步加载
-        if let Some((subject_id, db_manager, history_entity)) = task {
-            cx.spawn(async move |_, cx| {
-                let result = cx
-                    .background_executor()
-                    .spawn(async move {
-                        if let Ok(conn) = db_manager.get_conn() {
-                            crate::backend::db::ops::DataService::fetch_change_history(
-                                &conn, subject_id,
-                            )
-                            .ok()
-                        } else {
-                            None
-                        }
-                    })
-                    .await;
-
-                if let Some(logs) = result {
-                    cx.update(|cx| {
-                        // [修正] 更新 Entity
-                        history_entity.update(cx, |store, _| {
-                            store.entries = logs;
-                        });
-                    })
-                    .ok();
-                }
-            })
-            .detach();
-        }
     }
 
     /// 切换历史记录视图模式
