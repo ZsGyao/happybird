@@ -37,6 +37,8 @@ pub struct ChangeLogEntry {
     pub old_value: Option<String>,
     pub new_value: Option<String>,
     pub created_at: String,
+    /// 使用 Option，因为很多记录可能没有备注
+    pub remark: Option<String>,
 }
 
 /// 字段定义元数据

@@ -39,7 +39,9 @@ pub fn create_tables(conn: &Connection) -> Result<()> {
             field_key   TEXT,
             old_value   TEXT,
             new_value   TEXT,
-            created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+            created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+            remark      TEXT,  -- 备注字段
+            FOREIGN KEY(subject_id) REFERENCES subjects(id) ON DELETE CASCADE
         )",
         [],
     )?;

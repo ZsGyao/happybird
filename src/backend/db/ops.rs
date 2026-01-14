@@ -531,11 +531,12 @@ impl DataService {
     /// 获取指定 Subject 的所有变更历史，按时间倒序排列
     pub fn fetch_change_history(conn: &Connection, subject_id: i32) -> Result<Vec<ChangeLogEntry>> {
         let mut stmt = conn.prepare(
-            "SELECT id, subject_id, action_type, field_key, old_value, new_value, created_at
+                // [修改] SQL 语句增加 remark 字段
+                "SELECT id, subject_id, action_type, field_key, old_value, new_value, created_at, remark
                  FROM change_log
                  WHERE subject_id = ?
                  ORDER BY created_at DESC",
-        )?;
+            )?;
 
         let rows = stmt.query_map(params![subject_id], |row| {
             Ok(ChangeLogEntry {
@@ -546,6 +547,8 @@ impl DataService {
                 old_value: row.get(4)?,
                 new_value: row.get(5)?,
                 created_at: row.get(6)?,
+                // [新增] 读取 remark
+                remark: row.get(7)?,
             })
         })?;
 
@@ -554,6 +557,20 @@ impl DataService {
             history.push(row?);
         }
         Ok(history)
+    }
+
+    /// 更新单条日志的备注
+    ///
+    /// # Arguments
+    /// * `log_id`: 日志记录的主键 ID
+    /// * `remark`: 备注内容。如果是 None 或空字符串，数据库将存为 NULL
+    pub fn update_log_remark(conn: &Connection, log_id: i32, remark: Option<String>) -> Result<()> {
+        let final_remark = remark.filter(|s| !s.trim().is_empty());
+        conn.execute(
+            "UPDATE change_log SET remark = ? WHERE id = ?",
+            params![final_remark, log_id],
+        )?;
+        Ok(())
     }
 
     // ========================================================================
