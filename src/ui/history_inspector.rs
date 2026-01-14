@@ -57,6 +57,7 @@ impl HistoryInspector {
                     InputEvent::Blur => {
                         // 失焦自动保存,停止编辑
                         if let Some(id) = this.editing_id {
+                            println!("Loss focus");
                             this.save_remark(id, cx);
                             this.cancel_editing(cx);
                         }
@@ -327,7 +328,7 @@ impl HistoryInspector {
                                 ),
                             )
                             .child(
-                                div().flex_1().child(
+                                div().flex_1().w_full().child(
                                     Label::new(note)
                                         .text_xs()
                                         .text_color(theme.colors.muted_foreground)
