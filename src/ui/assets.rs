@@ -64,3 +64,25 @@ impl HappybirdAsset {
             .unwrap()
     }
 }
+
+#[allow(unused)]
+pub fn assert_path_debug() {
+    use gpui::AssetSource;
+    // 确保这里的 HappybirdAsset 是你定义的那个 struct
+    let assets = crate::ui::assets::HappybirdAsset;
+
+    println!("---------- 正在检查打包资源 ----------");
+    // 列出所有文件，空字符串表示列出根目录所有
+    match assets.list("") {
+        Ok(files) => {
+            if files.is_empty() {
+                println!("⚠️ 警告：没有找到任何资源！");
+            }
+            for file in files {
+                println!("✅ 发现资源: {}", file);
+            }
+        }
+        Err(e) => println!("❌ 资源列表错误: {}", e),
+    }
+    println!("------------------------------------");
+}

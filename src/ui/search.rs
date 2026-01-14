@@ -86,7 +86,7 @@ impl Render for SearchPanel {
             .child(
                 Input::new(&self.search_input)
                     .appearance(false)
-                    .prefix(Icon::new(HappyBirdIcons::Search)),
+                    .prefix(Icon::new(HappyBirdIcons::Search.load(cx))),
             )
     }
 }
