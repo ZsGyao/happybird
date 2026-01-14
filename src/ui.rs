@@ -7,7 +7,6 @@ pub mod detail_panel;
 mod hb_icons;
 mod header;
 pub mod history_inspector;
-pub mod history_item;
 pub mod import_panel;
 pub mod indent_guides;
 pub mod info_panel;

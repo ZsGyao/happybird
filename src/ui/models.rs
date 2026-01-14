@@ -8,10 +8,13 @@ use gpui::{App, Context, Entity, Global, prelude::*};
 use gpui_component::input::InputState;
 use serde_json::{Map, Value, json};
 
-use crate::backend::db::{
-    config::DbManager,
-    models::{ChangeLogEntry, Subject},
-    ops::DataService,
+use crate::{
+    backend::db::{
+        config::DbManager,
+        models::{ChangeLogEntry, Subject},
+        ops::DataService,
+    },
+    ui::history_inspector::HistoryInspector,
 };
 
 /// The global state
@@ -286,7 +289,7 @@ impl Models {
                             // A. 刷新左侧列表
                             model.fetch_page(cx, true);
 
-                            // B. [关键修复] 刷新所有受影响的 Tab
+                            // B. 刷新所有受影响的 Tab
                             if let Ok(conn) = model.db_manager.get_conn() {
                                 // 遍历所有打开的 Tab
                                 for tab in &mut model.tabs {
@@ -309,14 +312,14 @@ impl Models {
                                             tab.working_attributes = new_attrs;
                                             tab.is_dirty = false;
 
-                                            // 如果右侧历史面板开着，也顺便刷新一下历史
-                                            if tab.is_inspector_open {
-                                                if let Ok(logs) = DataService::fetch_change_history(
-                                                    &conn,
-                                                    tab.subject_id,
-                                                ) {
-                                                    tab.history_logs = Some(logs);
-                                                }
+                                            if let Ok(logs) = DataService::fetch_change_history(
+                                                &conn,
+                                                tab.subject_id,
+                                            ) {
+                                                // 使用 update 更新 Entity，不需要手动 notify Tab，因为 Entity 更新会自动传播
+                                                tab.history_entity.update(cx, |store, _| {
+                                                    store.entries = logs;
+                                                });
                                             }
                                         }
                                     }
@@ -347,10 +350,10 @@ impl Models {
     // ----------------------------- Tab Management Logic --------------------------
 
     /// 打开一个用户标签页。如果已存在则切换过去，否则新建。
-    pub fn open_tab(&mut self, subject: &Subject, _cx: &mut App) {
+    pub fn open_tab(&mut self, subject: &Subject, cx: &mut App) {
         // 注意: 这里通常用 &mut AppContext 来 notify
         if !self.tabs.iter().any(|t| t.subject_id == subject.id) {
-            self.tabs.push(TabItem::new(subject));
+            self.tabs.push(TabItem::new(subject, cx));
         }
         self.active_tab_id = Some(subject.id);
         // cx.notify(); // 如果你的架构是在 update 回调外 notify，这里不需要，否则需要
@@ -482,6 +485,10 @@ pub fn build_models(cx: &mut App) {
 
 // ------------------------------------------------------ Sub Item ------------------------------------------
 
+// ---------------------------------------------------------------------------
+//        IMPORT PANEL
+// ---------------------------------------------------------------------------
+
 /// Import preview global data and state
 #[derive(Debug)]
 pub struct ImportPreviewState {
@@ -583,11 +590,22 @@ impl GroupingState {
     }
 }
 
-// [新增] 历史记录的显示模式枚举
-#[derive(Clone, Copy, Debug, PartialEq)]
+// ---------------------------------------------------------------------------
+//        HISTORY PANEL
+// ---------------------------------------------------------------------------
+
+// 历史记录的显示模式枚举
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub enum HistoryViewMode {
-    Timeline,     // 时间线模式
+    #[default]
+    Timeline, // 时间线模式
     GroupByField, // 按字段分组模式
+}
+
+// 历史记录数据容器
+// 这是一个纯数据结构，将被 Entity 包裹作为"模型"使用
+pub struct HistoryStore {
+    pub entries: Vec<ChangeLogEntry>,
 }
 
 /// 单个标签页的状态
@@ -595,6 +613,7 @@ pub enum HistoryViewMode {
 pub struct TabItem {
     pub subject_id: i32,
     pub name: String,
+    // ------------------- FORM DATA -------------------------
     /// 原始数据（用于对比脏状态和重置）
     pub original_attributes: Map<String, Value>,
     /// 当前正在编辑的数据
@@ -606,19 +625,29 @@ pub struct TabItem {
     // Key: field_key (e.g., "email", "age")
     // Value: Entity<InputState>
     pub input_states: HashMap<String, Entity<InputState>>,
+
     // ---------- CHANGE LOG PANEL ---------------------------
     /// 控制右侧历史记录面板的显示/隐藏
     pub is_inspector_open: bool, // 控制右侧面板显隐
-    /// 历史记录显示模式
-    pub inspector_mode: HistoryViewMode,
-    /// 历史记录数据缓存。None 表示尚未加载，Some 表示已加载
-    pub history_logs: Option<Vec<ChangeLogEntry>>, // 缓存日志数据
+    /// 共享数据实体
+    /// 类型是 Entity<HistoryStore>。
+    /// 这里的 Entity 充当了"Model"的角色。
+    pub history_entity: Entity<HistoryStore>,
+    /// 视图实体缓存
+    /// 类型是 Entity<HistoryInspector>。
+    /// 这里的 Entity 充当了"View"的角色（因为它实现了 Render）。
+    /// 我们缓存它以保留输入框状态和滚动位置。
+    pub inspector_view: Option<Entity<HistoryInspector>>,
 }
 
 impl TabItem {
-    pub fn new(subject: &Subject) -> Self {
+    pub fn new(subject: &Subject, cx: &mut App) -> Self {
         // 假设 subject.attributes 是 Value::Object
         let attrs = subject.attributes.as_object().cloned().unwrap_or_default();
+
+        // 创建共享数据实体
+        let history_entity = cx.new(|_| HistoryStore { entries: vec![] });
+
         Self {
             subject_id: subject.id,
             name: subject.name.clone(),
@@ -628,8 +657,8 @@ impl TabItem {
             input_states: HashMap::new(),
             is_editing: false,
             is_inspector_open: false,
-            history_logs: None,
-            inspector_mode: HistoryViewMode::Timeline,
+            history_entity,       // 存入 Entity
+            inspector_view: None, // 懒加载
         }
     }
 

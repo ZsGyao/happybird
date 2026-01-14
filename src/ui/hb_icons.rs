@@ -9,8 +9,11 @@ pub enum HappyBirdIcons {
     Search,
     File,
     Settings,
-    Eidt,
+    Edit,
     Message,
+    List,
+    LayoutList,
+    Hash,
 }
 
 /// 已解析的图标 (携带了最终路径)
@@ -47,8 +50,11 @@ impl HappyBirdIcons {
             HappyBirdIcons::Search => "search",
             HappyBirdIcons::File => "file",
             HappyBirdIcons::Settings => "settings",
-            HappyBirdIcons::Eidt => "edit",
+            HappyBirdIcons::Edit => "edit",
             HappyBirdIcons::Message => "message",
+            HappyBirdIcons::List => "list",
+            HappyBirdIcons::LayoutList => "layout-list",
+            HappyBirdIcons::Hash => "hash",
         };
 
         // 3. 确定文件夹 (Outline_Solid / Pixel)

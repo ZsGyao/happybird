@@ -128,16 +128,23 @@ impl DetailPanel {
 
                 // 2.2 回到 UI 线程更新 Model
                 if let Some(new_logs) = result {
-                    cx.update(|cx| {
-                        let global = cx.global::<GlobalAppState>().0.clone();
-                        global.update(cx, |model, cx| {
-                            if let Some(tab) = model.tabs.iter_mut().find(|t| t.subject_id == id) {
-                                tab.history_logs = new_logs;
-                                cx.notify(); // [重要] 触发重绘，Inspector 将显示新记录
-                            }
-                        });
-                    })
-                    .ok();
+                    if let Some(logs) = new_logs {
+                        cx.update(|cx| {
+                            let global = cx.global::<GlobalAppState>().0.clone();
+                            global.update(cx, |model, cx| {
+                                if let Some(tab) =
+                                    model.tabs.iter_mut().find(|t| t.subject_id == id)
+                                {
+                                    // [修正] 使用 history_entity 更新
+                                    tab.history_entity.update(cx, |store, _| {
+                                        store.entries = logs;
+                                    });
+                                    // Entity update 会自动触发 notify，不需要手动 cx.notify()
+                                }
+                            });
+                        })
+                        .ok();
+                    }
                 }
             })
             .detach();
@@ -148,60 +155,63 @@ impl DetailPanel {
     fn action_toggle_inspector(
         &mut self,
         _: &ToggleInspector,
-        _: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         let global = cx.global::<GlobalAppState>().0.clone();
 
-        // 1. 同步更新开关状态
-        let load_info = global.update(cx, |model, cx| {
+        let task = global.update(cx, |model, cx| {
+            let db_manager = model.get_db_manager();
             if let Some(tab) = model.get_active_tab_mut() {
                 tab.is_inspector_open = !tab.is_inspector_open;
-                // 如果打开面板且数据为空，返回 ID 以便加载
-                if tab.is_inspector_open && tab.history_logs.is_none() {
-                    return Some((tab.subject_id, model.get_db_manager()));
+
+                // [修正] 使用 cx.new 创建实体 (充当 View)
+                if tab.inspector_view.is_none() {
+                    let subject_id = tab.subject_id;
+                    let history_entity = tab.history_entity.clone();
+
+                    let view_entity =
+                        cx.new(|cx| HistoryInspector::new(window, cx, subject_id, history_entity));
+                    tab.inspector_view = Some(view_entity);
                 }
-                // 状态改变，通知订阅者
+
+                // 判断是否需要加载数据
+                let need_load = tab.history_entity.read(cx).entries.is_empty();
+
+                if tab.is_inspector_open && need_load {
+                    return Some((tab.subject_id, db_manager, tab.history_entity.clone()));
+                }
                 cx.notify();
             }
             None
         });
 
-        // 这里的 notify 是为了让 DetailPanel 自身重绘（响应 is_inspector_open 的变化）
-        cx.notify();
-
-        // 2. 如果需要加载数据
-        if let Some((subject_id, db_manager)) = load_info {
-            cx.spawn(async move |_this, cx| {
-                // 在后台线程获取数据
+        // 异步加载
+        if let Some((subject_id, db_manager, history_entity)) = task {
+            cx.spawn(async move |_, cx| {
                 let result = cx
                     .background_executor()
                     .spawn(async move {
                         if let Ok(conn) = db_manager.get_conn() {
-                            return crate::backend::db::ops::DataService::fetch_change_history(
+                            crate::backend::db::ops::DataService::fetch_change_history(
                                 &conn, subject_id,
                             )
-                            .ok();
+                            .ok()
+                        } else {
+                            None
                         }
-                        None
                     })
                     .await;
 
-                // [关键修复] 回到主线程更新 Model 并 强制 UI 重绘
-                // 使用 cx.update (ViewContext) 而不是 cx.update_global，
-                // 这样我们可以直接访问 DetailPanel 的上下文来触发 notify
-                let _ = cx.update(|cx| {
-                    let global = cx.global::<GlobalAppState>().0.clone();
-                    global.update(cx, |model, cx| {
-                        if let Some(tab) =
-                            model.tabs.iter_mut().find(|t| t.subject_id == subject_id)
-                        {
-                            tab.history_logs = result;
-                            // 这里通知的是 Global Model 的订阅者
-                            cx.notify();
-                        }
-                    });
-                });
+                if let Some(logs) = result {
+                    cx.update(|cx| {
+                        // [修正] 更新 Entity
+                        history_entity.update(cx, |store, _| {
+                            store.entries = logs;
+                        });
+                    })
+                    .ok();
+                }
             })
             .detach();
         }
@@ -217,10 +227,11 @@ impl DetailPanel {
         let global = cx.global::<GlobalAppState>().0.clone();
         global.update(cx, |model, cx| {
             if let Some(tab) = model.get_active_tab_mut() {
-                tab.inspector_mode = match tab.inspector_mode {
-                    HistoryViewMode::Timeline => HistoryViewMode::GroupByField,
-                    HistoryViewMode::GroupByField => HistoryViewMode::Timeline,
-                };
+                if let Some(view) = &tab.inspector_view {
+                    view.update(cx, |inspector, cx| {
+                        inspector.toggle_mode(cx);
+                    });
+                }
                 cx.notify();
             }
         });
@@ -919,35 +930,15 @@ impl Render for DetailPanel {
                         self.render_form_area(&mut tab, window, cx)
                             .into_any_element(),
                         // 2. 右栏：历史检查器 (条件渲染)
+                        // 2. 右栏：历史检查器 (条件渲染 - 已修改)
                         if show_inspector {
-                            // 头部增加切换按钮
-                            let content = HistoryInspector::render(
-                                tab.history_logs.as_ref(),
-                                tab.inspector_mode,
-                                cx,
-                            );
-
-                            v_flex()
-                                .h_full()
-                                .child(
-                                    // 给 Inspector 顶部加个切换模式的小按钮
-                                    div().absolute().top(px(12.0)).right(px(12.0)).child(
-                                        Button::new("mode-switch")
-                                            .icon(IconName::Replace)
-                                            .ghost()
-                                            .small()
-                                            .tooltip("Switch View Mode")
-                                            .on_click(cx.listener(|this, _, w, c| {
-                                                this.action_switch_inspector_mode(
-                                                    &SwitchInspectorMode,
-                                                    w,
-                                                    c,
-                                                )
-                                            })),
-                                    ),
-                                )
-                                .child(content)
-                                .into_any_element()
+                            // [关键修改] 直接渲染 View Entity
+                            if let Some(view) = tab.inspector_view.clone() {
+                                // Entity 在 GPUI 0.2.2 中实现了 IntoElement，可以直接 child()
+                                v_flex().h_full().child(view).into_any_element()
+                            } else {
+                                div().into_any_element()
+                            }
                         } else {
                             div().into_any_element()
                         },
