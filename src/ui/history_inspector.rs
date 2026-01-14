@@ -55,9 +55,10 @@ impl HistoryInspector {
             |this: &mut Self, _state, event, _window, cx| {
                 match event {
                     InputEvent::Blur => {
-                        // 失焦自动保存
+                        // 失焦自动保存,停止编辑
                         if let Some(id) = this.editing_id {
                             this.save_remark(id, cx);
+                            this.cancel_editing(cx);
                         }
                     }
                     InputEvent::PressEnter { .. } => {
@@ -106,7 +107,6 @@ impl HistoryInspector {
         self.editing_id = Some(log_id);
         let text = current_text.unwrap_or_default();
 
-        // [修正] set_value 需要 window
         self.input_state
             .update(cx, |state, cx| state.set_value(text, window, cx));
 
@@ -310,28 +310,38 @@ impl HistoryInspector {
                     .mt_1()
                     .min_h(px(20.0))
                     .flex()
-                    .items_center()
+                    .items_start()
                     .justify_between()
+                    .gap(px(8.0))
                     .child(if let Some(note) = remark {
                         h_flex()
                             .gap_1()
-                            .items_center()
+                            .items_start()
+                            .flex_1()
+                            .min_w(px(0.0))
                             .child(
-                                Icon::new(HappyBirdIcons::Message.load(cx))
-                                    .size(px(12.0))
-                                    .text_color(gpui::yellow()),
+                                div().pt(px(2.0)).child(
+                                    Icon::new(HappyBirdIcons::Message.load(cx))
+                                        .size(px(12.0))
+                                        .text_color(gpui::yellow()),
+                                ),
                             )
                             .child(
-                                Label::new(note)
-                                    .text_xs()
-                                    .text_color(theme.colors.muted_foreground),
+                                div().flex_1().child(
+                                    Label::new(note)
+                                        .text_xs()
+                                        .text_color(theme.colors.muted_foreground)
+                                        .whitespace_normal(),
+                                ),
                             )
                     } else {
                         div()
                     })
                     .child(
+                        // Edit button
                         div()
                             .id("edit-cli")
+                            .flex_shrink_0()
                             .invisible()
                             .group_hover("item", |s| s.visible())
                             .cursor_pointer()

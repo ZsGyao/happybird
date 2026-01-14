@@ -14,7 +14,7 @@ static ENV_FILTER: OnceLock<env_config::EnvFilter> = OnceLock::new();
 static SCOPE_MAP: RwLock<ScopeMap> = RwLock::new(ScopeMap::empty());
 
 // pub const LEVEL_ENABLED_MAX_DEFAULT: log::LevelFilter = log::LevelFilter::Info;
-pub const LEVEL_ENABLED_MAX_DEFAULT: log::LevelFilter = log::LevelFilter::Trace;
+pub const LEVEL_ENABLED_MAX_DEFAULT: log::LevelFilter = log::LevelFilter::Warn;
 /// The maximum log level of verbosity that is enabled by default.
 /// All messages more verbose than this level will be discarded
 /// by default unless specially configured.

@@ -349,11 +349,49 @@ impl Models {
 
     // ----------------------------- Tab Management Logic --------------------------
 
-    /// 打开一个用户标签页。如果已存在则切换过去，否则新建。
+    /// 打开新标签页。如果已存在则切换过去，否则新建。
     pub fn open_tab(&mut self, subject: &Subject, cx: &mut App) {
         // 注意: 这里通常用 &mut AppContext 来 notify
         if !self.tabs.iter().any(|t| t.subject_id == subject.id) {
-            self.tabs.push(TabItem::new(subject, cx));
+            let tab = TabItem::new(subject, cx);
+
+            // 预加载历史记录 -> 当 Tab 被创建时，立即在后台发起历史记录请求
+            let subject_id = tab.subject_id;
+            let history_entity = tab.history_entity.clone();
+            let db_manager = self.db_manager.clone();
+
+            cx.spawn(async move |cx| {
+                // 1. 后台线程查询 DB
+                let result = cx
+                    .background_executor()
+                    .spawn(async move {
+                        if let Ok(conn) = db_manager.get_conn() {
+                            crate::backend::db::ops::DataService::fetch_change_history(
+                                &conn, subject_id,
+                            )
+                            .ok()
+                        } else {
+                            None
+                        }
+                    })
+                    .await;
+
+                // 2. 回到 UI 线程更新 Entity
+                if let Some(logs) = result {
+                    // 使用 cx.update 更新全局上下文中的实体
+                    // 注意：这里需要确保 AppContext 依然有效，cx.update 会处理
+                    // 但 spawn 在 App 上时，cx 是 AsyncAppContext
+                    cx.update(|cx| {
+                        history_entity.update(cx, |store, _| {
+                            store.entries = logs;
+                        });
+                    })
+                    .ok();
+                }
+            })
+            .detach();
+
+            self.tabs.push(tab);
         }
         self.active_tab_id = Some(subject.id);
         // cx.notify(); // 如果你的架构是在 update 回调外 notify，这里不需要，否则需要
