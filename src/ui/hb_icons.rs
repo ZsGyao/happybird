@@ -9,6 +9,8 @@ pub enum HappyBirdIcons {
     Search,
     File,
     Settings,
+    Eidt,
+    Message,
 }
 
 /// 已解析的图标 (携带了最终路径)
@@ -42,9 +44,11 @@ impl HappyBirdIcons {
 
         // 2. 确定文件名
         let filename = match self {
-            Self::Search => "search",
-            Self::File => "file",
-            Self::Settings => "settings",
+            HappyBirdIcons::Search => "search",
+            HappyBirdIcons::File => "file",
+            HappyBirdIcons::Settings => "settings",
+            HappyBirdIcons::Eidt => "edit",
+            HappyBirdIcons::Message => "message",
         };
 
         // 3. 确定文件夹 (Outline_Solid / Pixel)
