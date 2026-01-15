@@ -16,6 +16,7 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 
 use crate::ui::{
+    hb_icons::HappyBirdIcons,
     history_inspector::HistoryInspector,
     models::{GlobalAppState, HistoryViewMode, TabItem},
 };
@@ -689,50 +690,55 @@ impl DetailPanel {
                     )
                     .child(
                         h_flex()
-                            .gap(px(12.0))
-                            // 检查器开关
+                            .gap(px(10.0))
                             .child(
-                                Button::new(SharedString::from("toggle-history"))
-                                    .icon(IconName::Ellipsis)
+                                Button::new("toggle-history")
+                                    .icon(HappyBirdIcons::History.load(cx)) // 使用我们自定义的 History 图标
+                                    .ghost() // Ghost 风格不抢眼
                                     .selected(is_inspector_open)
-                                    .ghost()
                                     .on_click(cx.listener(|this, _, w, c| {
                                         this.action_toggle_inspector(&ToggleInspector, w, c)
                                     })),
                             )
+                            // 分隔线
                             .child(
-                                Button::new(SharedString::from("toggle-edit"))
-                                    .icon(if is_editing {
-                                        IconName::Star
-                                    } else {
-                                        IconName::StarOff
-                                    })
-                                    .label(if is_editing { "Editing" } else { "Read Only" })
-                                    .when(is_editing, |btn| btn.ghost())
-                                    .when(!is_editing, |btn| btn.bg(cx.theme().colors.secondary))
+                                div()
+                                    .w(px(1.0))
+                                    .h(px(24.0))
+                                    .bg(cx.theme().colors.border)
+                                    .mx(px(4.0)),
+                            )
+                            // 编辑状态切换
+                            .child(if is_editing {
+                                h_flex()
+                                    .gap(px(8.0))
+                                    .child(
+                                        Button::new("cancel-btn").label("Cancel").ghost().on_click(
+                                            cx.listener(|this, _, w, c| {
+                                                this.action_cancel_edit(&CancelEdit, w, c)
+                                            }),
+                                        ),
+                                    )
+                                    .child(
+                                        Button::new("save-btn")
+                                            .label("Save Changes")
+                                            .icon(HappyBirdIcons::Check.load(cx))
+                                            .primary()
+                                            .disabled(!is_dirty)
+                                            .on_click(cx.listener(|this, _, w, c| {
+                                                this.action_save(&SaveActiveTab, w, c)
+                                            })),
+                                    )
+                                    .into_any_element()
+                            } else {
+                                Button::new("edit-btn")
+                                    .label("Edit")
+                                    .icon(HappyBirdIcons::Edit.load(cx))
+                                    .outline() // Outline 风格更有质感
                                     .on_click(cx.listener(|this, _, w, c| {
                                         this.action_toggle_edit(&ToggleEditMode, w, c)
-                                    })),
-                            )
-                            .child(
-                                Button::new(SharedString::from("save-btn"))
-                                    .label("Save")
-                                    .icon(IconName::Sun)
-                                    .primary()
-                                    .disabled(!is_dirty)
-                                    .on_click(cx.listener(|this, _, w, c| {
-                                        this.action_save(&SaveActiveTab, w, c)
-                                    })),
-                            )
-                            .when(is_editing, |div| {
-                                div.child(
-                                    Button::new(SharedString::from("cancel-btn"))
-                                        .label("Cancel")
-                                        .ghost()
-                                        .on_click(cx.listener(|this, _, w, c| {
-                                            this.action_cancel_edit(&CancelEdit, w, c)
-                                        })),
-                                )
+                                    }))
+                                    .into_any_element()
                             }),
                     ),
             )
