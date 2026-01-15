@@ -14,6 +14,11 @@ pub enum HappyBirdIcons {
     List,
     LayoutList,
     Hash,
+    FileUser,
+    History,
+    Check,
+    SquareX,
+    LayOutDashBoard,
 }
 
 /// 已解析的图标 (携带了最终路径)
@@ -55,6 +60,11 @@ impl HappyBirdIcons {
             HappyBirdIcons::List => "list",
             HappyBirdIcons::LayoutList => "layout-list",
             HappyBirdIcons::Hash => "hash",
+            HappyBirdIcons::FileUser => "file-user",
+            HappyBirdIcons::History => "history",
+            HappyBirdIcons::Check => "check",
+            HappyBirdIcons::SquareX => "square-x",
+            HappyBirdIcons::LayOutDashBoard => "layout-dashboard",
         };
 
         // 3. 确定文件夹 (Outline_Solid / Pixel)

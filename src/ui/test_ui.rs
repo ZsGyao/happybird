@@ -1,10 +1,15 @@
 use gpui::{
     App, AppContext, Context, Entity, IntoElement, ParentElement, Render, Styled, Window, div, px,
 };
-use gpui_component::table::{Column, Table, TableDelegate, TableState};
+use gpui_component::{
+    StyledExt,
+    input::{Input, InputState},
+    table::{Column, Table, TableDelegate, TableState},
+};
 
 pub struct HappyBirdComponentTest {
     test_table: Entity<TableState<MyTableDelegate>>,
+    input: Entity<InputState>,
 }
 
 impl HappyBirdComponentTest {
@@ -13,7 +18,12 @@ impl HappyBirdComponentTest {
         let delegate = MyTableDelegate::new();
         let state = cx.new(|cx| TableState::new(delegate, window, cx));
 
-        cx.new(|_cx| Self { test_table: state })
+        let input = cx.new(|cx| InputState::new(window, cx).placeholder("test..."));
+
+        cx.new(|_cx| Self {
+            test_table: state,
+            input,
+        })
     }
 }
 
@@ -29,6 +39,7 @@ impl Render for HappyBirdComponentTest {
             .child(
                 // 2. 内层容器：这是你的具体内容区域，设置固定大小
                 div()
+                    .v_flex()
                     .w(px(950.0))
                     .h(px(500.0))
                     // 可选：添加边框或阴影以便看清边界
@@ -38,7 +49,8 @@ impl Render for HappyBirdComponentTest {
                         Table::new(&self.test_table)
                             .stripe(true)
                             .scrollbar_visible(true, true),
-                    ),
+                    )
+                    .child(Input::new(&self.input)),
             )
     }
 }

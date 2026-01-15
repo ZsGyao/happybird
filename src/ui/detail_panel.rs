@@ -25,12 +25,18 @@ use crate::ui::{
 // =============================================================================
 
 gpui::actions!(
+    tav_panel,
+    [
+        SaveActiveTab,  // Save the info detail tab
+        CloseActiveTab, // Close the info detail tab
+        NextTab,        // Into next info tab
+        PrevTab,        // Into prev info tab
+    ]
+);
+
+gpui::actions!(
     detail_panel,
     [
-        SaveActiveTab,       // Save the info detail tab
-        CloseActiveTab,      // Close the info detail tab
-        NextTab,             // Into next info tab
-        PrevTab,             // Into prev info tab
         ToggleEditMode,      // Toggle the edit mode -- edit <-> readonly
         CancelEdit,          // Stop to edit
         ToggleInspector,     // Toggle to open the inspector
@@ -60,8 +66,8 @@ impl DetailPanel {
             cx.bind_keys([
                 KeyBinding::new("ctrl-s", SaveActiveTab, None),
                 KeyBinding::new("ctrl-w", CloseActiveTab, None),
-                KeyBinding::new("right", NextTab, None),
-                KeyBinding::new("left", PrevTab, None),
+                KeyBinding::new("ctrl-right", NextTab, None),
+                KeyBinding::new("ctrl-left", PrevTab, None),
                 KeyBinding::new("ctrl-e", ToggleEditMode, None),
                 KeyBinding::new("escape", CancelEdit, None),
                 // History panel
