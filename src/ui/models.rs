@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeSet, HashMap},
+    collections::{BTreeSet, HashMap, HashSet},
     sync::Arc,
 };
 // 【关键修正1】引入 prelude 和 AppContext trait，确保 cx.new 和 update 可用
@@ -49,6 +49,10 @@ pub struct Models {
     /// 当前激活的标签页 ID (Subject ID)
     pub active_tab_id: Option<i32>,
 
+    // ---------- use for export ---------------------
+    pub multi_selection: MultiSelectionState,
+    pub export_state: ExportState,
+
     // ---------- SHOW ABOUT ---------------------------------
     pub show_about: bool,
 
@@ -79,6 +83,8 @@ impl Models {
             grouping_state: GroupingState::default(),
             tabs: vec![],
             active_tab_id: None,
+            multi_selection: MultiSelectionState::default(),
+            export_state: ExportState::default(),
         }
     }
 
@@ -153,7 +159,6 @@ impl Models {
                             store.subjects = new_data;
                         } else {
                             store.subjects.extend(new_data);
-                            println!("{:?}", store.subjects);
                         }
 
                         store.recalc_headers();
@@ -724,5 +729,105 @@ impl TabItem {
     pub fn mark_saved(&mut self) {
         self.original_attributes = self.working_attributes.clone();
         self.is_dirty = false;
+    }
+}
+
+// =============================================================================
+//  New Data Structures for Selection & Export
+// =============================================================================
+
+/// 导出数据范围枚举
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
+pub enum ExportScope {
+    #[default]
+    AllData, // 导出全部
+    CurrentSearch, // 导出当前搜索结果
+    SelectedItems, // [关键] 导出选中项
+}
+
+/// 导出模态框的状态管理
+#[derive(Clone, Debug, Default)]
+pub struct ExportState {
+    pub is_open: bool,
+    pub scope: ExportScope,
+    pub selected_fields: HashSet<String>,
+    pub all_fields: Vec<String>,
+    pub is_exporting: bool,
+}
+
+impl ExportState {
+    pub fn open(&mut self, available_fields: Vec<String>, has_selection: bool) {
+        self.is_open = true;
+        self.all_fields = available_fields.clone();
+        self.selected_fields = available_fields.into_iter().collect(); // 默认全选字段
+        self.is_exporting = false;
+
+        // 智能预判：如果有选中项，默认选中 SelectedItems 模式
+        if has_selection {
+            self.scope = ExportScope::SelectedItems;
+        } else {
+            self.scope = ExportScope::AllData;
+        }
+    }
+
+    pub fn close(&mut self) {
+        self.is_open = false;
+    }
+
+    pub fn toggle_field(&mut self, field: &str) {
+        if self.selected_fields.contains(field) {
+            self.selected_fields.remove(field);
+        } else {
+            self.selected_fields.insert(field.to_string());
+        }
+    }
+
+    pub fn select_all(&mut self) {
+        self.selected_fields = self.all_fields.iter().cloned().collect();
+    }
+
+    pub fn deselect_all(&mut self) {
+        self.selected_fields.clear();
+    }
+}
+
+/// 列表多选状态机 (Contextual Batch Mode Core)
+#[derive(Clone, Debug, Default)]
+pub struct MultiSelectionState {
+    /// 选中的 Subject ID 集合
+    pub selected_ids: HashSet<i32>,
+    /// 是否开启了“只看已选”模式 (Review Mode)
+    pub is_viewing_selected: bool,
+}
+
+impl MultiSelectionState {
+    /// 切换单行选中状态
+    pub fn toggle(&mut self, id: i32) {
+        if self.selected_ids.contains(&id) {
+            self.selected_ids.remove(&id);
+        } else {
+            self.selected_ids.insert(id);
+        }
+
+        // 如果清空了选择，自动退出检视模式
+        if self.selected_ids.is_empty() && self.is_viewing_selected {
+            self.is_viewing_selected = false;
+        }
+    }
+
+    /// 清空所有
+    pub fn clear(&mut self) {
+        self.selected_ids.clear();
+        self.is_viewing_selected = false;
+    }
+
+    /// 切换检视模式
+    pub fn toggle_view_mode(&mut self) {
+        self.is_viewing_selected = !self.is_viewing_selected;
+    }
+
+    /// 是否处于批量操作模式 (即至少选中了一项)
+    pub fn is_selection_mode(&self) -> bool {
+        !self.selected_ids.is_empty()
     }
 }

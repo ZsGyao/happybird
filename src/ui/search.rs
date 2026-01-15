@@ -1,6 +1,6 @@
 use crate::ui::hb_icons::HappyBirdIcons;
 use crate::ui::models::GlobalAppState;
-use crate::zlog::log_impl::debug;
+
 use gpui::{
     App, AppContext, Context, Entity, ParentElement, Render, Styled, Subscription, Window, div, px,
 };
@@ -27,7 +27,7 @@ impl SearchPanel {
                 window,
                 |this: &mut Self, state, event, _window, cx| match event {
                     InputEvent::Change => {
-                        let query = state.read(cx).value();
+                        let _query = state.read(cx).value();
                     }
                     InputEvent::PressEnter { .. } => {
                         let query = state.read(cx).value();

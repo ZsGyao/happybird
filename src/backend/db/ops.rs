@@ -191,8 +191,10 @@ impl DataService {
         let mut conditions = Vec::new();
         let mut params = Vec::new();
 
+        let split_ch = if raw_query.contains(":") { ":" } else { "：" };
+
         for term in raw_query.split_whitespace() {
-            if let Some((key, val)) = term.split_once(':') {
+            if let Some((key, val)) = term.split_once(split_ch) {
                 // ... (Key-Value 搜索逻辑保持不变) ...
                 // 1. 确定字段表达式
                 let column_expr = match key {
@@ -664,6 +666,63 @@ impl DataService {
             )?;
         }
         Ok(())
+    }
+}
+
+/// The function used for export
+impl DataService {
+    /// [新增] 获取所有用户
+    pub fn get_all_subjects(conn: &Connection) -> anyhow::Result<Vec<Subject>> {
+        let mut stmt = conn.prepare("SELECT * FROM subjects ORDER BY created_at DESC")?;
+        let rows = stmt.query_map([], |row| {
+            // 这里复用原本的 mapping 逻辑，或者抽取一个 private fn map_row
+            Ok(Subject {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                attributes: serde_json::from_str(&row.get::<_, String>(4)?).unwrap_or_default(),
+                created_at: row.get(5)?,
+                updated_at: row.get(6)?,
+            })
+        })?;
+
+        let mut subjects = Vec::new();
+        for r in rows {
+            subjects.push(r?);
+        }
+        Ok(subjects)
+    }
+
+    /// [新增] 根据 ID 列表批量获取
+    pub fn get_subjects_by_ids(conn: &Connection, ids: &[i32]) -> anyhow::Result<Vec<Subject>> {
+        if ids.is_empty() {
+            return Ok(vec![]);
+        }
+        // 动态构建 IN (?, ?, ?)
+        let placeholders: Vec<String> = ids.iter().map(|_| "?".to_string()).collect();
+        let sql = format!(
+            "SELECT * FROM subjects WHERE id IN ({})",
+            placeholders.join(",")
+        );
+
+        let mut stmt = conn.prepare(&sql)?;
+        let params: Vec<&dyn rusqlite::ToSql> =
+            ids.iter().map(|i| i as &dyn rusqlite::ToSql).collect();
+
+        let rows = stmt.query_map(params.as_slice(), |row| {
+            Ok(Subject {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                attributes: serde_json::from_str(&row.get::<_, String>(4)?).unwrap_or_default(),
+                created_at: row.get(5)?,
+                updated_at: row.get(6)?,
+            })
+        })?;
+
+        let mut subjects = Vec::new();
+        for r in rows {
+            subjects.push(r?);
+        }
+        Ok(subjects)
     }
 }
 

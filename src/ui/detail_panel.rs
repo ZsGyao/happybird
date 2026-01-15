@@ -5,7 +5,7 @@ use gpui::{
     SharedString, Subscription, Window, div, prelude::*, px,
 };
 use gpui_component::{
-    ActiveTheme, Disableable, Icon, IconName, Selectable, Sizable,
+    ActiveTheme, Disableable, Icon, IconName, Selectable,
     button::{Button, ButtonVariants},
     h_flex,
     input::{Input, InputEvent, InputState},
@@ -18,7 +18,7 @@ use std::collections::BTreeMap;
 use crate::ui::{
     hb_icons::HappyBirdIcons,
     history_inspector::HistoryInspector,
-    models::{GlobalAppState, HistoryViewMode, TabItem},
+    models::{GlobalAppState, TabItem},
 };
 
 // =============================================================================

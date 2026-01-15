@@ -57,7 +57,6 @@ impl HistoryInspector {
                     InputEvent::Blur => {
                         // 失焦自动保存,停止编辑
                         if let Some(id) = this.editing_id {
-                            println!("Loss focus");
                             this.save_remark(id, cx);
                             this.cancel_editing(cx);
                         }

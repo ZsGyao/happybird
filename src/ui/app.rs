@@ -8,6 +8,7 @@ use crate::{
         assets::HappybirdAsset,
         constants::{APP_LEFT_PANEL_INIT_W, APP_RIGHT_PANEL_INIT_W},
         detail_panel::DetailPanel,
+        export_modal::render_export_modal,
         import_panel::ImportPanel,
         info_panel::InfoPanel,
         models::GlobalAppState,
@@ -242,6 +243,7 @@ impl Render for WindowShadow {
                     .when_some(self.import_panel.clone(), |this, panel| {
                         this.child(div().absolute().size_full().child(panel))
                     })
+                    .children(render_export_modal(cx))
                     .when(show_test, |this| this.child(self.test_table.clone())),
             );
 

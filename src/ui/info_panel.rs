@@ -8,14 +8,15 @@ use std::{
 };
 
 use gpui::{
-    App, AppContext, AsyncApp, Bounds, ClickEvent, Context, Div, Entity, FocusHandle,
+    App, AppContext, AsyncApp, Bounds, ClickEvent, Context, Div, Entity, FocusHandle, FontWeight,
     InteractiveElement, IntoElement, ParentElement, PathPromptOptions, Pixels, Render,
     ScrollStrategy, SharedString, Stateful, StatefulInteractiveElement, Styled,
     UniformListScrollHandle, Window, div, point, prelude::FluentBuilder, px, size, uniform_list,
 };
 use gpui_component::{
-    ActiveTheme, Icon, IconName, Sizable, StyledExt,
+    ActiveTheme, Icon, IconName, Sizable,
     button::{Button, ButtonCustomVariant, ButtonVariants},
+    checkbox::Checkbox,
     h_flex,
     label::Label,
     list::ListItem,
@@ -27,6 +28,8 @@ use crate::{
     backend::db::models::Subject,
     debug, error,
     ui::{
+        export_modal::ExportModal,
+        hb_icons::HappyBirdIcons,
         indent_guides::{IndentGuideColors, RenderedIndentGuide, indent_guides},
         models::{GlobalAppState, Models},
         search::SearchPanel,
@@ -144,14 +147,31 @@ impl InfoPanel {
     /// 这是一个核心逻辑，它将层级数据“拍平”为列表，供 `uniform_list` 渲染。
     fn rebuild_tree(&mut self, model: &Models) {
         self.tree_items.clear();
-
-        // --- 1. 添加虚拟根节点 ---
         let root_id = "root".to_string();
         let is_root_open = self.expanded_ids.contains(&root_id);
 
+        // 1. 检视模式过滤逻辑 (Review Mode)
+        // 如果开启了检视模式，我们只显示选中的人
+        let all_subjects: Vec<&Subject> = if model.multi_selection.is_viewing_selected {
+            model
+                .subjects
+                .iter()
+                .filter(|s| model.multi_selection.selected_ids.contains(&s.id))
+                .collect()
+        } else {
+            model.subjects.iter().collect()
+        };
+
+        // 标题动态变化
+        let root_text = if model.multi_selection.is_viewing_selected {
+            format!("Selected Items ({})", all_subjects.len())
+        } else {
+            format!("All Subjects ({})", model.total_count)
+        };
+
         self.tree_items.push(TreeItem {
             id: root_id.clone(),
-            text: format!("All Subjects ({})", model.total_count), // 显示总数,
+            text: root_text,
             depth: 0,
             is_folder: true,
             is_open: is_root_open,
@@ -166,10 +186,8 @@ impl InfoPanel {
         // 2. 开始递归分组处理
         // 获取当前激活的分组 keys (例如 ["department", "role"])
         let group_keys = &model.grouping_state.active_grouping_keys;
-        // 准备所有 subjects 的引用
-        let subjects: Vec<&Subject> = model.subjects.iter().collect();
         // 调用递归函数
-        self.build_recursive_groups(subjects, group_keys, 0, &root_id, 1);
+        self.build_recursive_groups(all_subjects, group_keys, 0, &root_id, 1);
     }
 
     /// 递归构建分组树
@@ -575,12 +593,7 @@ impl InfoPanel {
             return div().id("empty");
         }
 
-        let item = &self.tree_items[ix];
-        let item_id = item.id.clone();
-        let item_subject_id = item.subject_id;
-
-        // --- 逻辑：检测是否需要加载更多 (Infinite Scroll) ---
-        // 如果渲染到了倒数第 10 个元素，触发加载下一页
+        // Infinite Scroll
         if ix + 10 >= self.tree_items.len() {
             // 使用 window.defer 避免在 render 循环中直接 update
             cx.defer(move |cx| {
@@ -594,6 +607,20 @@ impl InfoPanel {
                 });
             });
         }
+
+        let item = &self.tree_items[ix];
+        let item_id = item.id.clone();
+        let item_subject_id = item.subject_id;
+
+        // 1. 获取全局多选状态
+        let global = cx.global::<GlobalAppState>().0.read(cx);
+        // 判断当前行是否被选中
+        let is_checked = item_subject_id.map_or(false, |sid| {
+            global.multi_selection.selected_ids.contains(&sid)
+        });
+        // 判断是否处于“批量模式”（即列表中只要有一项被选中，就视为批量模式）
+        let is_selection_mode = global.multi_selection.is_selection_mode();
+        let global_handle = cx.global::<GlobalAppState>().0.clone();
 
         let is_selected = self.selected_id.as_ref() == Some(&item_id);
         let is_folder = item.is_folder;
@@ -609,7 +636,8 @@ impl InfoPanel {
 
         div()
             .id(SharedString::from(format!("tree-item-{}", item.id)))
-            .h(px(24.0))
+            .group("row")
+            .h(px(28.0))
             .relative()
             .items_center()
             .pl(INDENT_SIZE * depth as f32)
@@ -617,19 +645,18 @@ impl InfoPanel {
             .cursor_pointer()
             .bg(bg_color)
             .hover(|s| s.bg(cx.theme().colors.info_hover))
+            // [交互区域 A] 行点击：只负责打开详情或折叠，绝不处理勾选
             .on_click(cx.listener(move |this, event: &ClickEvent, _window, cx| {
                 if event.is_right_click() || event.first_focus() {
                     return;
                 }
                 cx.stop_propagation();
 
-                // 逻辑优化：
-                // 1. 如果是文件夹 -> 切换折叠
-                // 2. 如果是文件 -> 选中
-                // 3. (可选) 文件夹也可以被选中，看需求。这里实现为文件夹只折叠，文件只选中。
+                // 如果是文件夹 -> 切换折叠
                 if is_folder {
                     this.toggle_expanded(&item_id, cx);
                 } else {
+                    // 如果是文件 -> 选中
                     this.select_item(item_id.clone(), item_subject_id, cx);
                 }
             }))
@@ -639,30 +666,90 @@ impl InfoPanel {
                         .items_center()
                         .gap_2()
                         .text_sm()
+                        // [交互区域 B] 左侧图标/复选框区域 (固定宽度 20px)
                         .child(
-                            // 图标逻辑：
-                            // Root -> Globe/Database
-                            // Group -> Folder (如果是部门可以用 Building, 兴趣用 Heart 等，这里暂统用 Folder)
-                            // User -> User/File
-                            if item.id == "root" {
-                                Icon::new(IconName::Dash).text_color(cx.theme().colors.primary)
-                            } else if is_folder {
-                                let icon = if is_open {
-                                    IconName::FolderOpen
-                                } else {
-                                    IconName::Folder
-                                };
-                                // 不同的分组层级可以用不同颜色
-                                let color = match group_key.as_deref() {
-                                    Some("department") | Some("部门") => cx.theme().colors.info,
-                                    Some("role") | Some("职位") => cx.theme().colors.warning,
-                                    _ => cx.theme().colors.blue,
-                                };
-                                Icon::new(icon).text_color(color)
-                            } else {
-                                Icon::new(IconName::User)
-                                    .text_color(cx.theme().colors.muted_foreground)
-                            },
+                            div()
+                                .w(px(20.0))
+                                .flex()
+                                .justify_center()
+                                .items_center()
+                                .child(
+                                    // 逻辑分流：是用户节点还是文件夹节点？
+                                    if let Some(sid) = item_subject_id {
+                                        // === 用户节点逻辑 ===
+                                        if is_checked || is_selection_mode {
+                                            // 场景 1: 批量模式或已选中 -> 常驻显示 Checkbox
+                                            self.render_checkbox(
+                                                sid,
+                                                is_checked,
+                                                global_handle.clone(),
+                                                cx,
+                                            )
+                                            .into_any_element()
+                                        } else {
+                                            // 场景 2: 普通模式 -> 默认显示 Icon，Hover 时“变身”为 Checkbox
+                                            div()
+                                                .size_full()
+                                                .relative() // 用于绝对定位叠加
+                                                // 层级 1: 默认图标 (User Icon) -> Hover 时隐藏
+                                                .child(
+                                                    div()
+                                                        .absolute()
+                                                        .inset_0()
+                                                        .flex()
+                                                        .items_center()
+                                                        .justify_center()
+                                                        .group_hover("row", |s| s.invisible()) // 关键 CSS
+                                                        .child(
+                                                            Icon::new(IconName::User).text_color(
+                                                                cx.theme().colors.muted_foreground,
+                                                            ),
+                                                        ),
+                                                )
+                                                // 层级 2: 悬停复选框 -> Hover 时显示
+                                                .child(
+                                                    div()
+                                                        .absolute()
+                                                        .inset_0()
+                                                        .flex()
+                                                        .items_center()
+                                                        .justify_center()
+                                                        .invisible() // 默认隐藏
+                                                        .group_hover("row", |s| s.visible()) // 关键 CSS
+                                                        .child(self.render_checkbox(
+                                                            sid,
+                                                            false,
+                                                            global_handle.clone(),
+                                                            cx,
+                                                        )),
+                                                )
+                                                .into_any_element()
+                                        }
+                                    } else {
+                                        // === 文件夹节点逻辑 (保持不变) ===
+                                        if item.id == "root" {
+                                            Icon::new(IconName::Dash)
+                                                .text_color(cx.theme().colors.primary)
+                                                .into_any_element()
+                                        } else {
+                                            let icon = if is_open {
+                                                IconName::FolderOpen
+                                            } else {
+                                                IconName::Folder
+                                            };
+                                            let color = match group_key.as_deref() {
+                                                Some("department") | Some("部门") => {
+                                                    cx.theme().colors.info
+                                                }
+                                                Some("role") | Some("职位") => {
+                                                    cx.theme().colors.warning
+                                                }
+                                                _ => cx.theme().colors.blue,
+                                            };
+                                            Icon::new(icon).text_color(color).into_any_element()
+                                        }
+                                    },
+                                ),
                         )
                         .child(
                             Label::new(item.text.clone())
@@ -673,6 +760,106 @@ impl InfoPanel {
                         ),
                 ),
             )
+    }
+
+    /// 辅助函数：渲染带有点击拦截的 Checkbox
+    ///
+    /// 这个函数生成的 Checkbox 会拦截点击事件，防止冒泡到行点击处理器。
+    fn render_checkbox(
+        &self,
+        sid: i32,
+        checked: bool,
+        global: Entity<Models>,
+        _cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        Checkbox::new(SharedString::from(format!("chk-{}", sid)))
+            .checked(checked) // 使用 bool
+            .on_click(move |_, _, cx| {
+                cx.stop_propagation();
+                global.update(cx, |m, _| m.multi_selection.toggle(sid));
+            })
+    }
+
+    /// [新增] 渲染底部悬浮操作栏
+    fn render_selection_bar(&self, cx: &mut Context<Self>) -> Option<impl IntoElement> {
+        let global = cx.global::<GlobalAppState>().0.read(cx);
+        let selection = &global.multi_selection;
+        let count = selection.selected_ids.len();
+
+        if count == 0 {
+            return None;
+        } // 没选中不显示
+
+        let is_viewing = selection.is_viewing_selected;
+        let global_handle = cx.global::<GlobalAppState>().0.clone();
+
+        Some(
+            div()
+                .absolute()
+                .bottom(px(90.0))
+                .left(px(0.0))
+                .right(px(0.0)) // 底部居中
+                .flex()
+                .justify_center()
+                // 浮在列表之上
+                .child(
+                    h_flex()
+                        .gap(px(12.0))
+                        .p(px(8.0))
+                        .rounded_xl()
+                        .shadow_lg()
+                        .border_1()
+                        .bg(cx.theme().colors.popover) // 使用 Popover 背景
+                        .border_color(cx.theme().colors.border)
+                        .items_center()
+                        // 1. 计数
+                        .child(
+                            Label::new(format!("{} Selected", count))
+                                .font_weight(FontWeight::BOLD)
+                                .text_sm()
+                                .pl(px(8.0)),
+                        )
+                        .child(div().w(px(1.0)).h(px(16.0)).bg(cx.theme().colors.border))
+                        // 2. 检视模式按钮
+                        .child(
+                            Button::new("review-btn")
+                                .label(if is_viewing { "Show All" } else { "Review" })
+                                .icon(if is_viewing {
+                                    HappyBirdIcons::List.load(cx)
+                                } else {
+                                    HappyBirdIcons::View.load(cx)
+                                })
+                                .when_else(is_viewing, |this| this.primary(), |this| this.ghost())
+                                .on_click({
+                                    let g = global_handle.clone();
+                                    move |_, _, cx| {
+                                        cx.stop_propagation();
+                                        g.update(cx, |m, cx| {
+                                            m.multi_selection.toggle_view_mode();
+                                            cx.notify();
+                                        })
+                                    }
+                                }),
+                        )
+                        // 3. 导出按钮
+                        .child(
+                            Button::new("export-sel-btn")
+                                .label("Export")
+                                .icon(HappyBirdIcons::Download.load(cx))
+                                .ghost()
+                                .on_click(|_, _, cx| ExportModal::toggle(cx)), // 打开导出框，会自动识别选中项
+                        )
+                        // 4. 清空按钮
+                        .child(
+                            Button::new("clear-btn")
+                                .icon(IconName::Close)
+                                .ghost()
+                                .on_click(move |_, _, cx| {
+                                    global_handle.update(cx, |m, _| m.multi_selection.clear())
+                                }),
+                        ),
+                ),
+        )
     }
 }
 
@@ -778,6 +965,8 @@ impl Render for InfoPanel {
                         .track_scroll(self.scroll_handle.clone()),
                     ),
             )
+            // 挂载悬浮栏
+            .children(self.render_selection_bar(cx))
             .child(
                 div()
                     .flex_shrink_0()

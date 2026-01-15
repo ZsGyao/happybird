@@ -4,6 +4,7 @@ use gpui_component::IconNamed;
 use crate::ui::theme::extra::{AppThemeExtra, IconThemeStyle};
 
 /// 图标目录枚举
+#[allow(unused)]
 #[derive(Clone, Copy, Debug)]
 pub enum HappyBirdIcons {
     Search,
@@ -19,6 +20,8 @@ pub enum HappyBirdIcons {
     Check,
     SquareX,
     LayOutDashBoard,
+    Download,
+    View,
 }
 
 /// 已解析的图标 (携带了最终路径)
@@ -65,6 +68,8 @@ impl HappyBirdIcons {
             HappyBirdIcons::Check => "check",
             HappyBirdIcons::SquareX => "square-x",
             HappyBirdIcons::LayOutDashBoard => "layout-dashboard",
+            HappyBirdIcons::Download => "download",
+            HappyBirdIcons::View => "view",
         };
 
         // 3. 确定文件夹 (Outline_Solid / Pixel)

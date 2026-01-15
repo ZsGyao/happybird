@@ -4,6 +4,7 @@ mod assets;
 mod components;
 pub mod constants;
 pub mod detail_panel;
+pub mod export_modal;
 mod hb_icons;
 mod header;
 pub mod history_inspector;
