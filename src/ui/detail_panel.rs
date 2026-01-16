@@ -1,8 +1,8 @@
 // src/ui/detail_panel.rs
 
 use gpui::{
-    AnyElement, App, AppContext, Context, Entity, FocusHandle, IntoElement, KeyBinding, Render,
-    SharedString, Subscription, Window, div, prelude::*, px,
+    AnyElement, App, AppContext, Context, Div, Entity, FocusHandle, IntoElement, KeyBinding,
+    Render, SharedString, Subscription, Window, div, prelude::*, px,
 };
 use gpui_component::{
     ActiveTheme, Disableable, Icon, IconName, Selectable,
@@ -46,24 +46,23 @@ gpui::actions!(
 );
 
 // =============================================================================
-//  2. Component Struct (组件结构)
+//  2. Component Struct
 // =============================================================================
 
 pub struct DetailPanel {
-    /// 焦点句柄，用于接收键盘事件 (Cmd+S, Cmd+W 等)
+    /// Focus handle，use to receive keyboard event like (Cmd+S, Cmd+W..)
     focus_handle: FocusHandle,
-    /// 本地存储输入框的订阅，防止内存泄漏或重复订阅
+    /// Store input sub
     input_subscriptions: BTreeMap<String, Subscription>,
 }
 
 impl DetailPanel {
-    /// 创建 DetailPanel 实例
+    /// new DetailPanel instance
     pub fn new(cx: &mut App) -> Entity<Self> {
         cx.new(|cx| {
             let focus_handle = cx.focus_handle();
 
-            // --- 绑定快捷键 ---
-            // 这些快捷键只有当焦点在 DetailPanel 内时才生效
+            // binging key board, when the focus in the detail panel, the key bingding can active
             cx.bind_keys([
                 KeyBinding::new("ctrl-s", SaveActiveTab, None),
                 KeyBinding::new("ctrl-w", CloseActiveTab, None),
@@ -84,14 +83,14 @@ impl DetailPanel {
     }
 
     // ========================================================================
-    //  3. Action Handlers (业务逻辑控制器)
+    //  3. Action Handlers
     // ========================================================================
 
-    /// 处理保存动作
+    /// Save action
     fn action_save(&mut self, _: &SaveActiveTab, _: &mut Window, cx: &mut Context<Self>) {
         let global = cx.global::<GlobalAppState>().0.clone();
 
-        // 1. 获取需要保存的数据
+        // Get data need store
         let save_task = global.update(cx, |model, cx| {
             if let Some(tab) = model.get_active_tab_mut() {
                 if tab.is_dirty {
@@ -105,23 +104,22 @@ impl DetailPanel {
             None
         });
 
-        // 2. 异步执行 DB 操作
+        // Async exec db ops
         if let Some((id, new_attrs, db_manager)) = save_task {
-            // 使用 cx.spawn 获取 AsyncWindowContext，它拥有 update 方法
             cx.spawn(async move |_this, cx| {
                 let updates: std::collections::HashMap<String, Value> =
                     new_attrs.into_iter().collect();
 
-                // 2.1 这里的代码运行在 Main Thread，但我们把 heavy IO 放到 background
+                // Put the heavy IO to background task
                 let result = cx
                     .background_executor()
                     .spawn(async move {
                         if let Ok(mut conn) = db_manager.get_conn() {
-                            // 执行更新
+                            // exce update
                             let _ = crate::backend::db::ops::DataService::update_fields(
                                 &mut conn, id, updates,
                             );
-                            // [Fix]: 立即拉取最新的 History
+                            // fetch newest history data
                             let new_history =
                                 crate::backend::db::ops::DataService::fetch_change_history(
                                     &conn, id,
@@ -133,7 +131,7 @@ impl DetailPanel {
                     })
                     .await;
 
-                // 2.2 回到 UI 线程更新 Model
+                // return ui thread and update ui
                 if let Some(new_logs) = result {
                     if let Some(logs) = new_logs {
                         cx.update(|cx| {
@@ -142,11 +140,10 @@ impl DetailPanel {
                                 if let Some(tab) =
                                     model.tabs.iter_mut().find(|t| t.subject_id == id)
                                 {
-                                    // [修正] 使用 history_entity 更新
+                                    // The history_entity update, when entity update, other entity observe it will refresh auto
                                     tab.history_entity.update(cx, |store, _| {
                                         store.entries = logs;
                                     });
-                                    // Entity update 会自动触发 notify，不需要手动 cx.notify()
                                 }
                             });
                         })
@@ -176,7 +173,6 @@ impl DetailPanel {
                     let subject_id = tab.subject_id;
                     let history_entity = tab.history_entity.clone();
 
-                    // [修正] 不再传递 Window，因为 HistoryInspector::new 改了
                     let view_entity =
                         cx.new(|cx| HistoryInspector::new(window, cx, subject_id, history_entity));
                     tab.inspector_view = Some(view_entity);
@@ -358,7 +354,6 @@ impl DetailPanel {
             .border_color(cx.theme().colors.border)
             .items_end()
             .child(
-                // [修正] 使用原生 overflow_x_scroll 替代未定义的 ScrollArea
                 div()
                     .id("tab-store")
                     .flex()
@@ -908,9 +903,7 @@ impl Render for DetailPanel {
                         // 2. 右栏：历史检查器 (条件渲染)
                         // 2. 右栏：历史检查器 (条件渲染 - 已修改)
                         if show_inspector {
-                            // [关键修改] 直接渲染 View Entity
                             if let Some(view) = tab.inspector_view.clone() {
-                                // Entity 在 GPUI 0.2.2 中实现了 IntoElement，可以直接 child()
                                 v_flex().h_full().child(view).into_any_element()
                             } else {
                                 div().into_any_element()
@@ -932,7 +925,7 @@ impl Render for DetailPanel {
                                     .gap(px(16.0))
                                     .items_center()
                                     .child(
-                                        Icon::new(IconName::LayoutDashboard)
+                                        Icon::new(HappyBirdIcons::LayOutDashBoard.load(cx))
                                             .size(px(64.0))
                                             .text_color(cx.theme().colors.border),
                                     )

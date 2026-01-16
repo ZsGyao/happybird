@@ -22,6 +22,7 @@ pub enum HappyBirdIcons {
     LayOutDashBoard,
     Download,
     View,
+    Import,
 }
 
 /// 已解析的图标 (携带了最终路径)
@@ -70,6 +71,7 @@ impl HappyBirdIcons {
             HappyBirdIcons::LayOutDashBoard => "layout-dashboard",
             HappyBirdIcons::Download => "download",
             HappyBirdIcons::View => "view",
+            HappyBirdIcons::Import => "import",
         };
 
         // 3. 确定文件夹 (Outline_Solid / Pixel)

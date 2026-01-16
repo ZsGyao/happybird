@@ -1037,47 +1037,21 @@ impl Render for InfoPanel {
                                 })
                                 .detach(); // detach 表示让这个任务独立运行
                             }),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .flex_row()
-                            .gap_2()
-                            .h(px(32.0))
-                            .child(
-                                div().flex_1().child(
-                                    Button::new("export")
-                                        .w_full()
-                                        .rounded_none()
-                                        .custom(custom_bnt)
-                                        .label("Export")
-                                        .text_xl(),
-                                ),
-                            )
-                            .child(
-                                div().flex_1().child(
-                                    Button::new("config")
-                                        .w_full()
-                                        .rounded_none()
-                                        .custom(custom_bnt)
-                                        .label("Config")
-                                        .text_xl(),
-                                ),
-                            ), // .child(
-                               //     div().flex_1().child(
-                               //         Button::new("Test Button")
-                               //             .w_full()
-                               //             .label("Test Button")
-                               //             .on_click(|e, window: &mut Window, cx| {
-                               //                 println!("Test Button click");
-                               //                 let model = cx.global::<GlobalAppState>().0.clone();
-                               //                 model.update(cx, |val, _| {
-                               //                     val.show_test = !val.show_test;
-                               //                 })
-                               //             }),
-                               //     ),
-                               // ),
-                    ),
+                    ), // .child(
+                       //     div().flex_1().child(
+                       //         Button::new("Test Button")
+                       //             .w_full()
+                       //             .label("Test Button")
+                       //             .on_click(|e, window: &mut Window, cx| {
+                       //                 println!("Test Button click");
+                       //                 let model = cx.global::<GlobalAppState>().0.clone();
+                       //                 model.update(cx, |val, _| {
+                       //                     val.show_test = !val.show_test;
+                       //                 })
+                       //             }),
+                       //     ),
+                       // ),
+                       // ),
             )
     }
 }
