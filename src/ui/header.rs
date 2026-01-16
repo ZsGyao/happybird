@@ -31,6 +31,7 @@ impl Render for Header {
             .border_b_1()
             .border_color(cx.theme().colors.border)
             .window_control_area(WindowControlArea::Drag)
+            // Windows 上的双击最大化和拖动逻辑
             .when(cfg!(not(target_os = "windows")), |this| {
                 this.on_mouse_down(MouseButton::Left, move |ev, window, _| {
                     if ev.click_count != 2 {
@@ -43,6 +44,7 @@ impl Render for Header {
                     }
                 })
             })
+            // 圆角处理
             .map(|div| match decorations {
                 Decorations::Server => div,
                 Decorations::Client { tiling } => div
@@ -53,38 +55,82 @@ impl Render for Header {
                         div.rounded_tr(APP_ROUNDING)
                     }),
             })
+            // macOS 的红绿灯占位
             .when(cfg!(target_os = "macos"), |this| {
                 this.child(div().w(px(72.0)))
             })
+            // --- Header 左侧内容区域 ---
             .child(div().pl(px(12.0)).pb(px(8.0)).pt(px(7.0)).flex().when(
                 cfg!(not(target_os = "macos")),
                 |this| {
                     this.child(
                         div()
-                            .id("happybird-name")
-                            .cursor_pointer()
+                            .id("header-left-content")
                             .h_flex()
-                            .on_mouse_down(MouseButton::Left, |_, window, cx| {
-                                window.prevent_default();
-                                cx.stop_propagation();
-                            })
-                            .on_click(|_, _, cx| {
-                                cx.global::<GlobalAppState>()
-                                    .0
-                                    .clone()
-                                    .update(cx, |val, _| {
-                                        val.show_about = !val.show_about;
-                                    });
-                            })
+                            .items_center() // 垂直居中
+                            .gap(px(8.0))
+                            // =========================================================
+                            // [新增] SideBar 切换按钮 (Hamburger Menu)
+                            // =========================================================
                             .child(
-                                img("images/happybird_logo_sm.png")
-                                    .w(px(26.0))
-                                    .mr(px(6.0))
-                                    .corner_radii(Corners::all(px(8.0))),
+                                div()
+                                    .id("toggle-sidebar-btn")
+                                    .cursor_pointer()
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .p(px(4.0)) // 增加点击热区
+                                    .rounded_md()
+                                    .hover(|s| s.bg(cx.theme().colors.info_hover)) // 悬停效果
+                                    // 防止事件冒泡触发窗口拖动
+                                    .on_mouse_down(MouseButton::Left, |_, window, cx| {
+                                        window.prevent_default();
+                                        cx.stop_propagation();
+                                    })
+                                    // 点击切换 SideBar 状态
+                                    .on_click(move |_, _, cx| {
+                                        let global = cx.global::<GlobalAppState>().0.clone();
+                                        global.update(cx, |model, cx| {
+                                            model.toggle_sidebar(cx);
+                                        });
+                                    })
+                                    .child(
+                                        Icon::new(IconName::Menu) // 使用菜单图标
+                                            .size(px(16.0))
+                                            .text_color(cx.theme().colors.muted_foreground),
+                                    ),
                             )
-                            .font_bold()
-                            .child("HappyBird")
-                            .mr(px(6.0)),
+                            // =========================================================
+                            // [修改] 应用 Logo 和名称
+                            // =========================================================
+                            // 将 Logo 和名称包裹在一个 div 中，作为整体处理
+                            .child(
+                                div()
+                                    .id("happybird-name")
+                                    .cursor_pointer()
+                                    .h_flex()
+                                    .on_mouse_down(MouseButton::Left, |_, window, cx| {
+                                        window.prevent_default();
+                                        cx.stop_propagation();
+                                    })
+                                    .on_click(|_, _, cx| {
+                                        cx.global::<GlobalAppState>().0.clone().update(
+                                            cx,
+                                            |val, _| {
+                                                val.show_about = !val.show_about;
+                                            },
+                                        );
+                                    })
+                                    .child(
+                                        img("images/happybird_logo_sm.png")
+                                            .w(px(26.0))
+                                            .mr(px(6.0))
+                                            .corner_radii(Corners::all(px(8.0))),
+                                    )
+                                    .font_bold()
+                                    .child("HappyBird")
+                                    .mr(px(6.0)),
+                            ),
                     )
                 },
             ))

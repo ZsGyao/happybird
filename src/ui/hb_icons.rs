@@ -28,6 +28,7 @@ pub enum HappyBirdIcons {
     MessagesSquare,
     Github,
     Database,
+    Lock,
 }
 
 /// 已解析的图标 (携带了最终路径)
@@ -82,6 +83,7 @@ impl HappyBirdIcons {
             HappyBirdIcons::MessagesSquare => "messages-square",
             HappyBirdIcons::Github => "github",
             HappyBirdIcons::Database => "database",
+            HappyBirdIcons::Lock => "lock",
         };
 
         // 3. 确定文件夹 (Outline_Solid / Pixel)

@@ -12,6 +12,7 @@ use crate::{
         import_panel::ImportPanel,
         info_panel::InfoPanel,
         models::GlobalAppState,
+        sidebar::HappyBirdSideBar,
         status_bar::StatusBar,
         test_ui::HappyBirdComponentTest,
         theme,
@@ -53,6 +54,7 @@ pub struct WindowShadow {
     pub test_table: Entity<HappyBirdComponentTest>,
     pub detail_panel: Entity<DetailPanel>,
     pub status_bar: Entity<StatusBar>,
+    pub sidebar: Entity<HappyBirdSideBar>,
 }
 
 impl Render for WindowShadow {
@@ -86,6 +88,22 @@ impl Render for WindowShadow {
             // 开关关了 -> 扔掉，释放内存
             self.import_panel = None;
         }
+
+        // 读取当前页面状态
+        let current_page = cx
+            .global::<GlobalAppState>()
+            .0
+            .read(cx)
+            .current_page
+            .clone();
+
+        // 读取折叠状态
+        let is_collapsed = cx
+            .global::<GlobalAppState>()
+            .0
+            .read(cx)
+            .is_sidebar_collapsed;
+        let sidebar_width = if is_collapsed { px(56.0) } else { px(180.0) };
 
         let mut element = div()
             .id("window-backdrop")
@@ -208,28 +226,48 @@ impl Render for WindowShadow {
                     .max_h_full()
                     .child(self.header.clone()) // 从此，窗口被绘制完成
                     .child(
-                        div().flex().h_flex().size_full().overflow_hidden().child(
-                            h_resizable("center-dock")
-                                .child(
-                                    resizable_panel()
-                                        .size(px(260.0))
-                                        .size_range(px(180.0)..Pixels::MAX)
-                                        .child(
-                                            div()
-                                                .size_full()
-                                                .overflow_hidden()
-                                                .child(self.info_panel.clone()),
-                                        ),
-                                )
-                                .child(
-                                    resizable_panel().size(center_init_size).child(
-                                        div()
-                                            .size_full()
-                                            .overflow_hidden()
-                                            .child(self.detail_panel.clone()),
-                                    ),
-                                ),
-                        ),
+                        div()
+                            .flex()
+                            .h_flex()
+                            .size_full()
+                            .overflow_hidden()
+                            // SideBar: 固定在最左侧
+                            .child(
+                                div()
+                                    .w(sidebar_width) // 固定宽度
+                                    .h_full()
+                                    .flex_shrink_0() // 不允许压缩
+                                    .child(self.sidebar.clone()), // 渲染 SideBar
+                            )
+                            .child(
+                                div()
+                                    .flex_1() // 占据剩余空间
+                                    .h_full()
+                                    .child(match current_page {
+                                        crate::ui::models::AppPage::Users => {
+                                            h_resizable("center-dock")
+                                                .child(
+                                                    resizable_panel()
+                                                        .size(px(260.0))
+                                                        .size_range(px(180.0)..Pixels::MAX)
+                                                        .child(
+                                                            div()
+                                                                .size_full()
+                                                                .overflow_hidden()
+                                                                .child(self.info_panel.clone()),
+                                                        ),
+                                                )
+                                                .child(
+                                                    resizable_panel().size(center_init_size).child(
+                                                        div()
+                                                            .size_full()
+                                                            .overflow_hidden()
+                                                            .child(self.detail_panel.clone()),
+                                                    ),
+                                                )
+                                        }
+                                    }),
+                            ),
                     )
                     .when(show_about, |this| {
                         this.child(about_dialog(&|_, cx| {
@@ -359,6 +397,7 @@ pub fn run() -> anyhow::Result<()> {
                     test_table: HappyBirdComponentTest::new(cx, window),
                     detail_panel: DetailPanel::new(cx),
                     status_bar: StatusBar::new(cx),
+                    sidebar: HappyBirdSideBar::new(cx),
                 });
                 Root::new(view, window, cx)
             })

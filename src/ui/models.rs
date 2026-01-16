@@ -53,6 +53,11 @@ pub struct Models {
     pub multi_selection: MultiSelectionState,
     pub export_state: ExportState,
 
+    // 当前激活的页面
+    pub current_page: AppPage,
+    // SideBar 是否折叠
+    pub is_sidebar_collapsed: bool,
+
     // ---------- SHOW ABOUT ---------------------------------
     pub show_about: bool,
 
@@ -85,6 +90,8 @@ impl Models {
             active_tab_id: None,
             multi_selection: MultiSelectionState::default(),
             export_state: ExportState::default(),
+            current_page: AppPage::Users,
+            is_sidebar_collapsed: true,
         }
     }
 
@@ -829,5 +836,29 @@ impl MultiSelectionState {
     /// 是否处于批量操作模式 (即至少选中了一项)
     pub fn is_selection_mode(&self) -> bool {
         !self.selected_ids.is_empty()
+    }
+}
+
+// 定义应用中的页面枚举
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AppPage {
+    Users,
+    // Dashboard, // 未来可以添加更多页面
+    // Settings,
+}
+
+impl Models {
+    // 切换页面的方法
+    pub fn navigate_to(&mut self, page: AppPage, cx: &mut Context<Self>) {
+        if self.current_page != page {
+            self.current_page = page;
+            cx.notify(); // 通知所有订阅者，状态变了
+        }
+    }
+
+    // 切换 SideBar 折叠状态的方法
+    pub fn toggle_sidebar(&mut self, cx: &mut Context<Self>) {
+        self.is_sidebar_collapsed = !self.is_sidebar_collapsed;
+        cx.notify();
     }
 }

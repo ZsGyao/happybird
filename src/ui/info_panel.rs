@@ -983,17 +983,6 @@ impl InfoPanel {
                             .detach();
                         }),
                 )
-                .child(div().w(px(1.0)).h(px(16.0)).bg(theme.colors.border)) // 垂直分割线
-                .child(
-                    Button::new("global-config")
-                        .icon(IconName::Settings)
-                        .label("Config")
-                        .small()
-                        .ghost()
-                        .on_click(|_, _, _| {
-                            println!("Open Config");
-                        }),
-                )
         }
     }
 }
