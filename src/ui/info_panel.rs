@@ -861,10 +861,151 @@ impl InfoPanel {
                 ),
         )
     }
+
+    // =========================================================================
+    // 底部固定工具栏
+    // =========================================================================
+    // 这个函数替代了之前的 render_selection_bar 和底部的 Import 按钮
+    fn render_bottom_toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let global = cx.global::<GlobalAppState>().0.read(cx);
+        let selection = &global.multi_selection;
+        let count = selection.selected_ids.len();
+        let is_viewing = selection.is_viewing_selected;
+        let theme = cx.theme();
+
+        // 容器：固定高度，背景色，顶边框
+        let container = h_flex()
+            .w_full()
+            .h(px(40.0)) // 舒适的高度，类似状态栏但可点击
+            .items_center()
+            .px(px(12.0))
+            .bg(theme.colors.tab_bar) // 使用 TabBar 背景，形成视觉底部
+            .border_t_1()
+            .border_color(theme.colors.border);
+
+        if count > 0 {
+            // === 模式 A: 选中操作模式 ===
+            container
+                .justify_between() // 左右分布
+                .child(
+                    // 左侧：选中计数 + 清除
+                    h_flex()
+                        .gap(px(8.0))
+                        .items_center()
+                        .child(
+                            Label::new(format!("{} Selected", count))
+                                .font_weight(FontWeight::BOLD)
+                                .text_xs()
+                                .text_color(theme.colors.primary),
+                        )
+                        .child(
+                            Button::new("clear-selection")
+                                .icon(IconName::Close)
+                                .small()
+                                .ghost()
+                                .tooltip("Clear Selection")
+                                .on_click(move |_, _, cx| {
+                                    let model = cx.global::<GlobalAppState>().0.clone();
+                                    model.update(cx, |m, _| m.multi_selection.clear());
+                                }),
+                        ),
+                )
+                .child(
+                    // 右侧：操作按钮 (Review, Export)
+                    h_flex()
+                        .gap(px(8.0))
+                        .child(
+                            Button::new("review-btn")
+                                .label(if is_viewing { "Show All" } else { "Review" })
+                                .icon(if is_viewing {
+                                    HappyBirdIcons::List.load(cx)
+                                } else {
+                                    HappyBirdIcons::View.load(cx)
+                                })
+                                .small()
+                                .ghost()
+                                .on_click({
+                                    move |_, _, cx| {
+                                        let g = cx.global::<GlobalAppState>().0.clone();
+                                        g.update(cx, |m, cx| {
+                                            m.multi_selection.toggle_view_mode();
+                                            cx.notify();
+                                        });
+                                    }
+                                }),
+                        )
+                        .child(
+                            Button::new("export-selected")
+                                .label("Export")
+                                .icon(HappyBirdIcons::Download.load(cx))
+                                .small()
+                                .primary() // 强调主操作
+                                .on_click(|_, _, cx| ExportModal::toggle(cx)),
+                        ),
+                )
+        } else {
+            // === 模式 B: 全局操作模式 (默认) ===
+            container
+                .justify_center() // 居中显示，显得平衡
+                .gap(px(16.0))
+                .child(
+                    Button::new("import-data")
+                        .icon(IconName::Plus) // 假设您有 Import 图标，没有就用 Plus
+                        .label("Import Data")
+                        .small()
+                        .ghost()
+                        .on_click(|_, _, cx| {
+                            // 这里复用您之前的 Import 逻辑
+                            let task = cx.prompt_for_paths(PathPromptOptions {
+                                files: true,
+                                directories: false,
+                                multiple: false,
+                                prompt: None,
+                            });
+                            cx.spawn(async move |cx| {
+                                if let Ok(Ok(Some(paths))) = task.await {
+                                    if let Some(path) = paths.first() {
+                                        let p = path.clone();
+                                        cx.update(|cx| {
+                                            if cx.has_global::<GlobalAppState>() {
+                                                cx.global::<GlobalAppState>()
+                                                    .0
+                                                    .clone()
+                                                    .update(cx, |model, cx| {
+                                                        model.preview_file(cx, p)
+                                                    });
+                                            }
+                                        })
+                                        .ok();
+                                    }
+                                }
+                            })
+                            .detach();
+                        }),
+                )
+                .child(div().w(px(1.0)).h(px(16.0)).bg(theme.colors.border)) // 垂直分割线
+                .child(
+                    Button::new("global-config")
+                        .icon(IconName::Settings)
+                        .label("Config")
+                        .small()
+                        .ghost()
+                        .on_click(|_, _, _| {
+                            println!("Open Config");
+                        }),
+                )
+        }
+    }
 }
 
 impl Render for InfoPanel {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // 布局结构优化：Flex Col
+        // 1. Search (Top)
+        // 2. GroupBar
+        // 3. List (Flex 1 - 占据剩余空间)
+        // 4. BottomToolbar (Fixed Height - 固定底部)
+
         let item_count = self.tree_items.len();
         const INDENT_SIZE: Pixels = px(16.0);
         const GUIDE_OFFSET: Pixels = px(16.0);
@@ -881,14 +1022,24 @@ impl Render for InfoPanel {
             .size_full()
             .flex()
             .flex_col()
-            .p_4()
-            .overflow_hidden()
             .bg(cx.theme().colors.background)
-            // ------ search
-            .child(div().flex_shrink_0().w_full().child(self.search.clone()))
-            // ------ group control
-            .child(div().flex_shrink_0().child(self.render_grouping_bar(cx)))
-            // ------ sider center source tree
+            // search
+            .child(
+                div()
+                    .flex_shrink_0()
+                    .p_4()
+                    .pb(px(0.0))
+                    .child(self.search.clone()),
+            )
+            // group control
+            .child(
+                div()
+                    .flex_shrink_0()
+                    .px_4()
+                    .py_2()
+                    .child(self.render_grouping_bar(cx)),
+            )
+            // list Area source tree
             .child(
                 div()
                     .flex_1()
@@ -914,7 +1065,7 @@ impl Render for InfoPanel {
                         })
                         .size_full()
                         .track_scroll(self.scroll_handle.clone())
-                        // --------- Visual Guides ----------
+                        // Visual Guides
                         .with_decoration(
                             indent_guides(INDENT_SIZE, IndentGuideColors::panel(cx))
                                 .with_compute_indents_fn(cx.entity(), |this, range, _, _| {
@@ -965,93 +1116,7 @@ impl Render for InfoPanel {
                         .track_scroll(self.scroll_handle.clone()),
                     ),
             )
-            // 挂载悬浮栏
-            .children(self.render_selection_bar(cx))
-            .child(
-                div()
-                    .flex_shrink_0()
-                    .w_full()
-                    .flex()
-                    .flex_col()
-                    .gap_2()
-                    .border_t_1()
-                    .border_color(cx.theme().colors.border)
-                    .pt(px(8.0))
-                    .child(
-                        Button::new("Import-button")
-                            .w_full()
-                            .rounded_none()
-                            .custom(custom_bnt)
-                            .label("Import New Data")
-                            .text_sm()
-                            .on_click(|_, _, cx| {
-                                // let directories = cx.can_select_mixed_files_and_dirs();
-                                let task = cx.prompt_for_paths(PathPromptOptions {
-                                    files: true,
-                                    directories: false,
-                                    multiple: false,
-                                    prompt: None,
-                                });
-
-                                cx.spawn(|cx: &mut AsyncApp| {
-                                    // 【关键修复步骤】
-                                    // 在进入 async 块之前，我们把 cx 克隆一份。
-                                    // AsyncWindowContext 是一个轻量级句柄，克隆它是廉价且必须的。
-                                    // 这样 async 块捕获的就是一个“拥有所有权”的 cx，而不是临时的引用。
-                                    let cx = cx.clone();
-
-                                    async move {
-                                        match task.await {
-                                            Ok(Ok(Some(paths))) => {
-                                                if let Some(path) = paths.first() {
-                                                    let p = path.clone();
-                                                    debug!("path -> {:?}", p);
-
-                                                    // 3. 使用克隆后的 cx 更新全局状态
-                                                    // 这里的 cx 是 AsyncWindowContext，它可以在后台存活
-                                                    cx.update(|cx| {
-                                                        if cx.has_global::<GlobalAppState>() {
-                                                            let global = cx
-                                                                .global::<GlobalAppState>()
-                                                                .0
-                                                                .clone();
-                                                            global.update(cx, |model, cx| {
-                                                                model.preview_file(cx, p);
-                                                            });
-                                                        }
-                                                    })
-                                                    .ok();
-                                                }
-                                            }
-                                            Ok(Ok(None)) => {
-                                                warn!("Cancel file select");
-                                            }
-                                            Err(e) => {
-                                                error!("System dialog error: {}", e);
-                                            }
-                                            Ok(Err(e)) => {
-                                                error!("Task error: {}", e);
-                                            }
-                                        }
-                                    }
-                                })
-                                .detach(); // detach 表示让这个任务独立运行
-                            }),
-                    ), // .child(
-                       //     div().flex_1().child(
-                       //         Button::new("Test Button")
-                       //             .w_full()
-                       //             .label("Test Button")
-                       //             .on_click(|e, window: &mut Window, cx| {
-                       //                 println!("Test Button click");
-                       //                 let model = cx.global::<GlobalAppState>().0.clone();
-                       //                 model.update(cx, |val, _| {
-                       //                     val.show_test = !val.show_test;
-                       //                 })
-                       //             }),
-                       //     ),
-                       // ),
-                       // ),
-            )
+            // 4. Bottom Toolbar (新加入的固定底栏)
+            .child(div().flex_shrink_0().child(self.render_bottom_toolbar(cx)))
     }
 }
