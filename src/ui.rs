@@ -14,5 +14,6 @@ pub mod info_panel;
 mod models;
 mod search;
 pub mod sidebar;
+pub mod status_bar;
 pub mod test_ui;
 mod theme;

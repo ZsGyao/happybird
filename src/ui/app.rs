@@ -12,6 +12,7 @@ use crate::{
         import_panel::ImportPanel,
         info_panel::InfoPanel,
         models::GlobalAppState,
+        status_bar::StatusBar,
         test_ui::HappyBirdComponentTest,
         theme,
     },
@@ -51,6 +52,7 @@ pub struct WindowShadow {
     pub import_panel: Option<Entity<ImportPanel>>,
     pub test_table: Entity<HappyBirdComponentTest>,
     pub detail_panel: Entity<DetailPanel>,
+    pub status_bar: Entity<StatusBar>,
 }
 
 impl Render for WindowShadow {
@@ -243,6 +245,11 @@ impl Render for WindowShadow {
                     .when_some(self.import_panel.clone(), |this, panel| {
                         this.child(div().absolute().size_full().child(panel))
                     })
+                    .child(
+                        div()
+                            .flex_shrink_0() // 防止被压缩
+                            .child(self.status_bar.clone()),
+                    )
                     .children(render_export_modal(cx))
                     .when(show_test, |this| this.child(self.test_table.clone())),
             );
@@ -351,6 +358,7 @@ pub fn run() -> anyhow::Result<()> {
                     import_panel: None,
                     test_table: HappyBirdComponentTest::new(cx, window),
                     detail_panel: DetailPanel::new(cx),
+                    status_bar: StatusBar::new(cx),
                 });
                 Root::new(view, window, cx)
             })

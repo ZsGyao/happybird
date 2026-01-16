@@ -23,6 +23,11 @@ pub enum HappyBirdIcons {
     Download,
     View,
     Import,
+    SquareChevronDown,
+    SquareChevronRight,
+    MessagesSquare,
+    Github,
+    Database,
 }
 
 /// 已解析的图标 (携带了最终路径)
@@ -72,6 +77,11 @@ impl HappyBirdIcons {
             HappyBirdIcons::Download => "download",
             HappyBirdIcons::View => "view",
             HappyBirdIcons::Import => "import",
+            HappyBirdIcons::SquareChevronDown => "square-chevron-down",
+            HappyBirdIcons::SquareChevronRight => "square-chevron-right",
+            HappyBirdIcons::MessagesSquare => "messages-square",
+            HappyBirdIcons::Github => "github",
+            HappyBirdIcons::Database => "database",
         };
 
         // 3. 确定文件夹 (Outline_Solid / Pixel)
