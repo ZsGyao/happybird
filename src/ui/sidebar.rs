@@ -193,9 +193,11 @@ impl Render for HappyBirdSideBar {
                                     .item(
                                         PopupMenuItem::new("Lock App")
                                             .icon(HappyBirdIcons::Lock.load(cx))
-                                            .on_click(|_, _, _| {
+                                            .on_click(|_, _, cx| {
                                                 // TODO: 触发锁定应用的全局 Action
                                                 println!("Action: Lock App Triggered");
+                                                let g = cx.global::<GlobalAppState>().0.clone();
+                                                g.update(cx, |model, cx| model.try_lock_app(cx));
                                             }),
                                     )
                                     // --- 主题切换 ---

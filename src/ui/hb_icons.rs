@@ -29,6 +29,8 @@ pub enum HappyBirdIcons {
     Github,
     Database,
     Lock,
+    FingerprintPattern,
+    ScanFace,
 }
 
 /// 已解析的图标 (携带了最终路径)
@@ -84,6 +86,8 @@ impl HappyBirdIcons {
             HappyBirdIcons::Github => "github",
             HappyBirdIcons::Database => "database",
             HappyBirdIcons::Lock => "lock",
+            HappyBirdIcons::FingerprintPattern => "fingerprint-pattern",
+            HappyBirdIcons::ScanFace => "scan-face",
         };
 
         // 3. 确定文件夹 (Outline_Solid / Pixel)

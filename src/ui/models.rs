@@ -2,7 +2,7 @@ use std::{
     collections::{BTreeSet, HashMap, HashSet},
     sync::Arc,
 };
-// 【关键修正1】引入 prelude 和 AppContext trait，确保 cx.new 和 update 可用
+
 use anyhow::Result;
 use gpui::{App, Context, Entity, Global, prelude::*};
 use gpui_component::input::InputState;
@@ -61,6 +61,12 @@ pub struct Models {
     // ---------- SHOW ABOUT ---------------------------------
     pub show_about: bool,
 
+    // ---------- Lock -------------------------------
+    // 应用锁状态
+    pub lock_state: LockState,
+    // 是否显示设置密码弹窗
+    pub show_set_password_modal: bool,
+
     // -------- just for test ---------------
     pub show_test: bool,
 }
@@ -92,6 +98,8 @@ impl Models {
             export_state: ExportState::default(),
             current_page: AppPage::Users,
             is_sidebar_collapsed: true,
+            lock_state: LockState::default(),
+            show_set_password_modal: false,
         }
     }
 
@@ -859,6 +867,104 @@ impl Models {
     // 切换 SideBar 折叠状态的方法
     pub fn toggle_sidebar(&mut self, cx: &mut Context<Self>) {
         self.is_sidebar_collapsed = !self.is_sidebar_collapsed;
+        cx.notify();
+    }
+}
+
+// 解锁方式枚举，为未来扩展预留
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum UnlockMethod {
+    Password,
+    Biometric, // 生物识别 (预留)
+}
+
+// [新增] 应用锁状态结构体
+#[derive(Clone, Debug)]
+pub struct LockState {
+    /// 应用当前是否处于锁定状态。
+    pub is_locked: bool,
+    /// 存储的密码哈希。
+    ///
+    /// # 安全警告
+    /// 在生产环境中，**绝对不能**存储明文密码。
+    /// 必须使用安全的哈希算法（如 Argon2, bcrypt）进行存储和比对。
+    /// 此处为演示项目方便，暂时存储明文，实际开发请务必替换。
+    hashed_password: Option<String>,
+    /// 当前支持的解锁方式列表。
+    pub available_unlock_methods: Vec<UnlockMethod>,
+}
+
+impl Default for LockState {
+    fn default() -> Self {
+        Self {
+            is_locked: false,
+            hashed_password: None, // 默认无密码
+            available_unlock_methods: vec![UnlockMethod::Password], // 默认仅支持密码
+        }
+    }
+}
+
+impl LockState {
+    /// 检查是否已设置密码。
+    pub fn has_password(&self) -> bool {
+        self.hashed_password.is_some()
+    }
+}
+
+impl Models {
+    // =========================================================================
+    // 应用锁相关逻辑
+    // =========================================================================
+
+    /// 尝试锁定应用。
+    ///
+    /// 如果已设置密码，则直接锁定；否则，打开设置密码弹窗。
+    pub fn try_lock_app(&mut self, cx: &mut Context<Self>) {
+        if self.lock_state.has_password() {
+            self.lock_state.is_locked = true;
+            // 锁定后出于安全考虑，可以重置到首页（可选）
+            // self.current_page = AppPage::Users;
+        } else {
+            // 未设置密码，打开设置弹窗
+            self.show_set_password_modal = true;
+        }
+        cx.notify();
+    }
+
+    /// 设置新密码。
+    ///
+    /// # Arguments
+    /// * `password` - 明文新密码。
+    pub fn set_password(&mut self, password: &str, cx: &mut Context<Self>) {
+        // 在生产环境中，这里应执行：self.lock_state.hashed_password = Some(hash_function(password));
+        self.lock_state.hashed_password = Some(password.to_string()); // 演示用明文
+        self.show_set_password_modal = false; // 关闭弹窗
+
+        // 设置成功后直接锁定，提升体验
+        self.lock_state.is_locked = true;
+        cx.notify();
+    }
+
+    /// 尝试使用密码解锁应用。
+    ///
+    /// # Returns
+    /// 解锁成功返回 `true`，失败返回 `false`。
+    pub fn unlock_with_password(&mut self, password_attempt: &str, cx: &mut Context<Self>) -> bool {
+        if let Some(stored_password) = &self.lock_state.hashed_password {
+            // 在生产环境中，这里应执行：if verify_hash(password_attempt, stored_password)
+            if password_attempt == stored_password {
+                // 演示用明文比对
+                self.lock_state.is_locked = false;
+                cx.notify();
+                return true;
+            }
+        }
+        false
+    }
+
+    /// 切换设置密码弹窗的显示状态。
+    pub fn toggle_set_password_modal(&mut self, cx: &mut Context<Self>) {
+        self.show_set_password_modal = !self.show_set_password_modal;
         cx.notify();
     }
 }
