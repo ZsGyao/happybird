@@ -1,14 +1,15 @@
 // src/ui/lock/set_password_modal.rs
 
 use gpui::{
-    App, AppContext, Context, Entity, FontWeight, InteractiveElement, IntoElement, ParentElement,
-    Render, StatefulInteractiveElement, Styled, Window, black, div, px,
+    App, AppContext, Context, Entity, FontWeight, InteractiveElement, IntoElement, KeyDownEvent,
+    ParentElement, Render, StatefulInteractiveElement, Styled, Subscription, Window, black, div,
+    px,
 };
 use gpui_component::{
     ActiveTheme,
     button::{Button, ButtonVariants},
     h_flex,
-    input::{Input, InputState}, // [关键] 使用 Input 组件
+    input::{Input, InputEvent, InputState}, // [关键] 使用 Input 组件
     label::Label,
     v_flex,
 };
@@ -26,30 +27,50 @@ pub struct SetPasswordModal {
     confirm_password_state: Entity<InputState>,
     /// 是否显示错误提示（如两次输入不一致）。
     error_message: Option<String>,
+    _password_subscription: Subscription,
 }
 
 impl SetPasswordModal {
     /// 创建一个新的 `SetPasswordModal` 实例。
     pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
-        cx.new(|cx| Self {
-            new_password_state: cx.new(|cx| {
-                InputState::new(window, cx)
-                    .masked(true)
-                    .placeholder("Enter new password")
-            }),
-            confirm_password_state: cx.new(|cx| {
-                InputState::new(window, cx)
-                    .masked(true)
-                    .placeholder("Re-enter to confirm")
-            }),
-            error_message: None,
+        let new_password_state = cx.new(|cx| {
+            InputState::new(window, cx)
+                .masked(true)
+                .placeholder("Enter new password")
+        });
+
+        let confirm_password_state = cx.new(|cx| {
+            InputState::new(window, cx)
+                .masked(true)
+                .placeholder("Re-enter to confirm")
+        });
+
+        cx.new(|cx| {
+            let _password_subscription = cx.subscribe_in(
+                &confirm_password_state,
+                window,
+                |this: &mut Self, _state, event, _window, cx| match event {
+                    InputEvent::Change => {}
+                    InputEvent::PressEnter { .. } => {
+                        this.submit(cx);
+                    }
+                    InputEvent::Focus => {}
+                    InputEvent::Blur => {}
+                },
+            );
+            Self {
+                new_password_state,
+                confirm_password_state,
+                error_message: None,
+                _password_subscription,
+            }
         })
     }
 
     /// 尝试提交新密码。
     fn submit(&mut self, cx: &mut Context<Self>) {
-        let new_pwd = self.new_password_state.read(cx).text();
-        let confirm_pwd = self.confirm_password_state.read(cx).text();
+        let new_pwd = self.new_password_state.read(cx).text().to_string();
+        let confirm_pwd = self.confirm_password_state.read(cx).text().to_string();
 
         if new_pwd.is_empty() {
             self.error_message = Some("Password cannot be empty.".to_string());
@@ -67,12 +88,14 @@ impl SetPasswordModal {
     /// 取消设置，关闭弹窗。
     fn cancel(&mut self, cx: &mut Context<Self>) {
         let g = cx.global::<GlobalAppState>().0.clone();
-        g.update(cx, |model, _cx| model.show_set_password_modal = false);
+        g.update(cx, |model, _cx| {
+            model.lock_state.show_set_password_modal = false
+        });
     }
 }
 
 impl Render for SetPasswordModal {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .absolute()
             .inset_0()
@@ -80,6 +103,11 @@ impl Render for SetPasswordModal {
             .flex()
             .items_center()
             .justify_center()
+            .on_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
+                if event.keystroke.key == "enter" {
+                    this.submit(cx);
+                }
+            }))
             .child(
                 v_flex()
                     .id("pawssard-card")
@@ -105,18 +133,14 @@ impl Render for SetPasswordModal {
                                 v_flex()
                                     .gap(px(8.0))
                                     .child(Label::new("New Password").text_sm())
-                                    .child(Input::new(&self.new_password_state).auto_focus(true)),
+                                    .child(Input::new(&self.new_password_state)),
                             )
                             // 确认密码输入框
                             .child(
                                 v_flex()
                                     .gap(px(8.0))
                                     .child(Label::new("Confirm Password").text_sm())
-                                    .child(
-                                        Input::new(&self.confirm_password_state).on_submit(
-                                            cx.listener(|this, _, _, cx| this.submit(cx)),
-                                        ),
-                                    ),
+                                    .child(Input::new(&self.confirm_password_state)),
                             )
                             // 错误提示区域
                             .child(div().h(px(20.0)).child(

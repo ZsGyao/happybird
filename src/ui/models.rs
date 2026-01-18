@@ -64,8 +64,6 @@ pub struct Models {
     // ---------- Lock -------------------------------
     // 应用锁状态
     pub lock_state: LockState,
-    // 是否显示设置密码弹窗
-    pub show_set_password_modal: bool,
 
     // -------- just for test ---------------
     pub show_test: bool,
@@ -99,7 +97,6 @@ impl Models {
             current_page: AppPage::Users,
             is_sidebar_collapsed: true,
             lock_state: LockState::default(),
-            show_set_password_modal: false,
         }
     }
 
@@ -883,6 +880,8 @@ pub enum UnlockMethod {
 pub struct LockState {
     /// 应用当前是否处于锁定状态。
     pub is_locked: bool,
+    // 是否显示设置密码弹窗
+    pub show_set_password_modal: bool,
     /// 存储的密码哈希。
     ///
     /// # 安全警告
@@ -899,7 +898,8 @@ impl Default for LockState {
         Self {
             is_locked: false,
             hashed_password: None, // 默认无密码
-            available_unlock_methods: vec![UnlockMethod::Password], // 默认仅支持密码
+            available_unlock_methods: vec![UnlockMethod::Password],
+            show_set_password_modal: false, // 默认仅支持密码
         }
     }
 }
@@ -926,7 +926,7 @@ impl Models {
             // self.current_page = AppPage::Users;
         } else {
             // 未设置密码，打开设置弹窗
-            self.show_set_password_modal = true;
+            self.lock_state.show_set_password_modal = true;
         }
         cx.notify();
     }
@@ -938,7 +938,7 @@ impl Models {
     pub fn set_password(&mut self, password: &str, cx: &mut Context<Self>) {
         // 在生产环境中，这里应执行：self.lock_state.hashed_password = Some(hash_function(password));
         self.lock_state.hashed_password = Some(password.to_string()); // 演示用明文
-        self.show_set_password_modal = false; // 关闭弹窗
+        self.lock_state.show_set_password_modal = false; // 关闭弹窗
 
         // 设置成功后直接锁定，提升体验
         self.lock_state.is_locked = true;
@@ -964,7 +964,7 @@ impl Models {
 
     /// 切换设置密码弹窗的显示状态。
     pub fn toggle_set_password_modal(&mut self, cx: &mut Context<Self>) {
-        self.show_set_password_modal = !self.show_set_password_modal;
+        self.lock_state.show_set_password_modal = !self.lock_state.show_set_password_modal;
         cx.notify();
     }
 }

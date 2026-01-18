@@ -11,7 +11,9 @@ use crate::{
         export_modal::render_export_modal,
         import_panel::ImportPanel,
         info_panel::InfoPanel,
+        lock_screen::LockScreen,
         models::GlobalAppState,
+        set_password_modal::{self, SetPasswordModal},
         sidebar::HappyBirdSideBar,
         status_bar::StatusBar,
         test_ui::HappyBirdComponentTest,
@@ -55,6 +57,8 @@ pub struct WindowShadow {
     pub detail_panel: Entity<DetailPanel>,
     pub status_bar: Entity<StatusBar>,
     pub sidebar: Entity<HappyBirdSideBar>,
+    pub set_password_screen: Entity<SetPasswordModal>,
+    pub lock_screen: Entity<LockScreen>,
 }
 
 impl Render for WindowShadow {
@@ -104,6 +108,20 @@ impl Render for WindowShadow {
             .read(cx)
             .is_sidebar_collapsed;
         let sidebar_width = if is_collapsed { px(56.0) } else { px(180.0) };
+
+        let is_locked = cx
+            .global::<GlobalAppState>()
+            .0
+            .read(cx)
+            .lock_state
+            .is_locked;
+
+        let show_set_password_modal = cx
+            .global::<GlobalAppState>()
+            .0
+            .read(cx)
+            .lock_state
+            .show_set_password_modal;
 
         let mut element = div()
             .id("window-backdrop")
@@ -180,6 +198,9 @@ impl Render for WindowShadow {
                     }),
             })
             .size_full() // Set window render finish
+            // =========================================================
+            //  主内容容器 (Main Container)
+            // =========================================================
             .child(
                 div()
                     .font_family("Inter")
@@ -289,6 +310,10 @@ impl Render for WindowShadow {
                             .child(self.status_bar.clone()),
                     )
                     .children(render_export_modal(cx))
+                    .when(is_locked, |this| this.child(self.lock_screen.clone()))
+                    .when(show_set_password_modal, |this| {
+                        this.child(self.set_password_screen.clone())
+                    })
                     .when(show_test, |this| this.child(self.test_table.clone())),
             );
 
@@ -398,6 +423,8 @@ pub fn run() -> anyhow::Result<()> {
                     detail_panel: DetailPanel::new(cx),
                     status_bar: StatusBar::new(cx),
                     sidebar: HappyBirdSideBar::new(cx),
+                    set_password_screen: SetPasswordModal::new(window, cx),
+                    lock_screen: LockScreen::new(window, cx),
                 });
                 Root::new(view, window, cx)
             })
