@@ -1,3 +1,5 @@
+#![windows_subsystem = "windows"]
+
 mod ui;
 #[macro_use]
 mod zlog;

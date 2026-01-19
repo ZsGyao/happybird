@@ -1,8 +1,8 @@
 // src/ui/detail_panel.rs
 
 use gpui::{
-    AnyElement, App, AppContext, Context, Div, Entity, FocusHandle, IntoElement, KeyBinding,
-    Render, SharedString, Subscription, Window, div, prelude::*, px,
+    AnyElement, App, AppContext, Context, Entity, FocusHandle, IntoElement, KeyBinding, Render,
+    SharedString, Subscription, Window, div, prelude::*, px,
 };
 use gpui_component::{
     ActiveTheme, Disableable, Icon, IconName, Selectable,
@@ -901,7 +901,6 @@ impl Render for DetailPanel {
                         self.render_form_area(&mut tab, window, cx)
                             .into_any_element(),
                         // 2. 右栏：历史检查器 (条件渲染)
-                        // 2. 右栏：历史检查器 (条件渲染 - 已修改)
                         if show_inspector {
                             if let Some(view) = tab.inspector_view.clone() {
                                 v_flex().h_full().child(view).into_any_element()

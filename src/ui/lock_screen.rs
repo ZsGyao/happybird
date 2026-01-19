@@ -2,7 +2,7 @@
 
 use gpui::{
     App, AppContext, Context, Entity, FontWeight, InteractiveElement, IntoElement, MouseButton,
-    ParentElement, Render, Styled, Subscription, Window, black, div, px,
+    ParentElement, Render, Styled, Subscription, Window, div, px,
 };
 use gpui_component::{
     ActiveTheme, Icon, Sizable,

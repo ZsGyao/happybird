@@ -8,7 +8,7 @@ use std::{
 };
 
 use gpui::{
-    App, AppContext, AsyncApp, Bounds, ClickEvent, Context, Div, Entity, FocusHandle, FontWeight,
+    App, AppContext, Bounds, ClickEvent, Context, Div, Entity, FocusHandle, FontWeight,
     InteractiveElement, IntoElement, ParentElement, PathPromptOptions, Pixels, Render,
     ScrollStrategy, SharedString, Stateful, StatefulInteractiveElement, Styled,
     UniformListScrollHandle, Window, div, point, prelude::FluentBuilder, px, size, uniform_list,

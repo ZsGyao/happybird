@@ -13,7 +13,7 @@ use crate::{
         info_panel::InfoPanel,
         lock_screen::LockScreen,
         models::GlobalAppState,
-        set_password_modal::{self, SetPasswordModal},
+        set_password_modal::SetPasswordModal,
         sidebar::HappyBirdSideBar,
         status_bar::StatusBar,
         test_ui::HappyBirdComponentTest,
