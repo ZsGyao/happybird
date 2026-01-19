@@ -644,7 +644,7 @@ impl InfoPanel {
             .pr(px(8.0))
             .cursor_pointer()
             .bg(bg_color)
-            .hover(|s| s.bg(cx.theme().colors.info_hover))
+            // .hover(|s| s.bg(cx.theme().colors.info_hover))
             // [交互区域 A] 行点击：只负责打开详情或折叠，绝不处理勾选
             .on_click(cx.listener(move |this, event: &ClickEvent, _window, cx| {
                 if event.is_right_click() || event.first_focus() {
@@ -780,88 +780,6 @@ impl InfoPanel {
             })
     }
 
-    /// [新增] 渲染底部悬浮操作栏
-    fn render_selection_bar(&self, cx: &mut Context<Self>) -> Option<impl IntoElement> {
-        let global = cx.global::<GlobalAppState>().0.read(cx);
-        let selection = &global.multi_selection;
-        let count = selection.selected_ids.len();
-
-        if count == 0 {
-            return None;
-        } // 没选中不显示
-
-        let is_viewing = selection.is_viewing_selected;
-        let global_handle = cx.global::<GlobalAppState>().0.clone();
-
-        Some(
-            div()
-                .absolute()
-                .bottom(px(90.0))
-                .left(px(0.0))
-                .right(px(0.0)) // 底部居中
-                .flex()
-                .justify_center()
-                // 浮在列表之上
-                .child(
-                    h_flex()
-                        .gap(px(12.0))
-                        .p(px(8.0))
-                        .rounded_xl()
-                        .shadow_lg()
-                        .border_1()
-                        .bg(cx.theme().colors.popover) // 使用 Popover 背景
-                        .border_color(cx.theme().colors.border)
-                        .items_center()
-                        // 1. 计数
-                        .child(
-                            Label::new(format!("{} Selected", count))
-                                .font_weight(FontWeight::BOLD)
-                                .text_sm()
-                                .pl(px(8.0)),
-                        )
-                        .child(div().w(px(1.0)).h(px(16.0)).bg(cx.theme().colors.border))
-                        // 2. 检视模式按钮
-                        .child(
-                            Button::new("review-btn")
-                                .label(if is_viewing { "Show All" } else { "Review" })
-                                .icon(if is_viewing {
-                                    HappyBirdIcons::List.load(cx)
-                                } else {
-                                    HappyBirdIcons::View.load(cx)
-                                })
-                                .when_else(is_viewing, |this| this.primary(), |this| this.ghost())
-                                .on_click({
-                                    let g = global_handle.clone();
-                                    move |_, _, cx| {
-                                        cx.stop_propagation();
-                                        g.update(cx, |m, cx| {
-                                            m.multi_selection.toggle_view_mode();
-                                            cx.notify();
-                                        })
-                                    }
-                                }),
-                        )
-                        // 3. 导出按钮
-                        .child(
-                            Button::new("export-sel-btn")
-                                .label("Export")
-                                .icon(HappyBirdIcons::Download.load(cx))
-                                .ghost()
-                                .on_click(|_, _, cx| ExportModal::toggle(cx)), // 打开导出框，会自动识别选中项
-                        )
-                        // 4. 清空按钮
-                        .child(
-                            Button::new("clear-btn")
-                                .icon(IconName::Close)
-                                .ghost()
-                                .on_click(move |_, _, cx| {
-                                    global_handle.update(cx, |m, _| m.multi_selection.clear())
-                                }),
-                        ),
-                ),
-        )
-    }
-
     // =========================================================================
     // 底部固定工具栏
     // =========================================================================
@@ -872,6 +790,13 @@ impl InfoPanel {
         let count = selection.selected_ids.len();
         let is_viewing = selection.is_viewing_selected;
         let theme = cx.theme();
+
+        let custom_bnt = ButtonCustomVariant::new(cx)
+            .color(cx.theme().background)
+            .foreground(cx.theme().foreground)
+            .border(cx.theme().border)
+            .active(cx.theme().secondary_active)
+            .hover(cx.theme().background.opacity(0.1));
 
         // 容器：固定高度，背景色，顶边框
         let container = h_flex()
@@ -947,12 +872,14 @@ impl InfoPanel {
             // === 模式 B: 全局操作模式 (默认) ===
             container
                 .justify_center() // 居中显示，显得平衡
-                .gap(px(16.0))
+                //.gap(px(16.0))
                 .child(
                     Button::new("import-data")
                         .icon(IconName::Plus) // 假设您有 Import 图标，没有就用 Plus
                         .label("Import Data")
-                        .small()
+                        .large()
+                        .custom(custom_bnt)
+                        .size_full()
                         .ghost()
                         .on_click(|_, _, cx| {
                             // 这里复用您之前的 Import 逻辑
@@ -998,13 +925,6 @@ impl Render for InfoPanel {
         let item_count = self.tree_items.len();
         const INDENT_SIZE: Pixels = px(16.0);
         const GUIDE_OFFSET: Pixels = px(16.0);
-
-        let custom_bnt = ButtonCustomVariant::new(cx)
-            .color(cx.theme().background)
-            .foreground(cx.theme().foreground)
-            .border(cx.theme().border)
-            .active(cx.theme().secondary_active)
-            .hover(cx.theme().background.opacity(0.1));
 
         div()
             .id("info-panel")
