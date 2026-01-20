@@ -3,6 +3,8 @@ use gpui::App;
 use crate::{error, ui::theme::infra::extra::AppThemeExtra};
 
 pub mod infra;
+pub mod manager;
+pub mod strategy;
 
 pub fn init(cx: &mut App) {
     // 初始化扩展状态
