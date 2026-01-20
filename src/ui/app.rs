@@ -1,22 +1,20 @@
 use gpui::{prelude::FluentBuilder, *};
+use tracing::debug;
 
-use crate::{
-    debug,
-    ui::{
-        assets::HappybirdAsset,
-        constants::{APP_LEFT_PANEL_INIT_W, APP_RIGHT_PANEL_INIT_W},
-        detail_panel::DetailPanel,
-        export_modal::render_export_modal,
-        import_panel::ImportPanel,
-        info_panel::InfoPanel,
-        lock_screen::LockScreen,
-        models::GlobalAppState,
-        set_password_modal::SetPasswordModal,
-        sidebar::HappyBirdSideBar,
-        status_bar::StatusBar,
-        test_ui::HappyBirdComponentTest,
-        theme,
-    },
+use crate::ui::{
+    assets::HappybirdAsset,
+    constants::{APP_LEFT_PANEL_INIT_W, APP_RIGHT_PANEL_INIT_W},
+    detail_panel::DetailPanel,
+    export_modal::render_export_modal,
+    import_panel::ImportPanel,
+    info_panel::InfoPanel,
+    lock_screen::LockScreen,
+    models::GlobalAppState,
+    set_password_modal::SetPasswordModal,
+    sidebar::HappyBirdSideBar,
+    status_bar::StatusBar,
+    test_ui::HappyBirdComponentTest,
+    theme,
 };
 use gpui_component::{
     ActiveTheme, Root, StyledExt,
@@ -43,7 +41,6 @@ pub fn find_fonts(cx: &mut App) -> gpui::Result<()> {
     }
 
     let results = cx.text_system().add_fonts(fonts);
-    debug!("loaded fonts: {:?}", cx.text_system().all_font_names());
     results
 }
 

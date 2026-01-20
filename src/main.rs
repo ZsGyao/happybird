@@ -1,24 +1,22 @@
-#![windows_subsystem = "windows"]
+// #![windows_subsystem = "windows"]
 
-mod ui;
-#[macro_use]
-mod zlog;
+use tracing::{error, info};
+
 mod backend;
-
-use std::sync::LazyLock;
-
-#[allow(dead_code)]
-static RUNTIME: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
-    tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .worker_threads(1)
-        .build()
-        .unwrap()
-});
+mod logging;
+mod ui;
 
 fn main() -> anyhow::Result<()> {
-    zlog::init();
-    zlog::sink::init_output_stdout();
+    let _guard = logging::init()?;
+    info!("HappyBird application starting...");
+    info!("Version: {}", env!("CARGO_PKG_VERSION"));
 
-    crate::ui::app::run()
+    if let Err(e) = crate::ui::app::run() {
+        // 使用 tracing 记录崩溃错误
+        error!("Application crashed: {:?}", e);
+        return Err(e);
+    }
+
+    info!("Application stopped gracefully.");
+    Ok(())
 }

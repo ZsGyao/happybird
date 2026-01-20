@@ -1,10 +1,8 @@
 use gpui::App;
 
-use crate::{error, ui::theme::extra::AppThemeExtra};
+use crate::{error, ui::theme::infra::extra::AppThemeExtra};
 
-pub mod extra;
-pub mod loader;
-pub mod style;
+pub mod infra;
 
 pub fn init(cx: &mut App) {
     // 初始化扩展状态
@@ -21,7 +19,8 @@ pub fn init(cx: &mut App) {
 
     let json = std::str::from_utf8(&json_bytes).expect("Theme JSON is not valid UTF-8");
     // 初始加载不需要 window，传 None
-    if let Err(e) = crate::ui::theme::loader::apply_theme(cx, None, &json, "Happybird Dark") {
+    if let Err(e) = crate::ui::theme::infra::loader::apply_theme(cx, None, &json, "Happybird Dark")
+    {
         error!("Theme load error: {:?}", e);
     }
 }

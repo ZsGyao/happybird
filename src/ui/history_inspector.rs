@@ -18,7 +18,7 @@ use crate::{
     ui::{
         hb_icons::HappyBirdIcons,
         models::{GlobalAppState, HistoryStore, HistoryViewMode},
-        theme::style::ThemedStyle,
+        theme::infra::style::ThemedStyle,
     },
 };
 

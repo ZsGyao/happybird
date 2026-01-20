@@ -1,7 +1,7 @@
 use gpui::{App, SharedString};
 use gpui_component::IconNamed;
 
-use crate::ui::theme::extra::{AppThemeExtra, IconThemeStyle};
+use crate::ui::theme::infra::extra::{AppThemeExtra, IconThemeStyle};
 
 /// 图标目录枚举
 #[allow(unused)]
