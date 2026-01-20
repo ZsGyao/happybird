@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use gpui::{prelude::FluentBuilder, *};
 
 use crate::{
@@ -123,7 +121,7 @@ impl Render for WindowShadow {
             .lock_state
             .show_set_password_modal;
 
-        let mut element = div()
+        let element = div()
             .id("window-backdrop")
             .key_context("app")
             .bg(gpui::transparent_black())
@@ -316,12 +314,6 @@ impl Render for WindowShadow {
                     })
                     .when(show_test, |this| this.child(self.test_table.clone())),
             );
-
-        let text_styles = element.text_style();
-        *text_styles = Some(TextStyleRefinement::default());
-
-        let ff = &mut text_styles.as_mut().unwrap().font_features;
-        *ff = Some(FontFeatures(Arc::new(vec![("tnum".to_string(), 1)])));
 
         element
     }

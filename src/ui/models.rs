@@ -402,8 +402,7 @@ impl Models {
                         history_entity.update(cx, |store, _| {
                             store.entries = logs;
                         });
-                    })
-                    .ok();
+                    });
                 }
             })
             .detach();

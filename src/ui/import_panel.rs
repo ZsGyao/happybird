@@ -149,8 +149,8 @@ impl TableDelegate for PreviewDelegate {
             .unwrap_or(0)
     }
 
-    fn column(&self, col_ix: usize, _cx: &App) -> &gpui_component::table::Column {
-        &self.columns[col_ix]
+    fn column(&self, col_ix: usize, _cx: &App) -> Column {
+        self.columns[col_ix].clone()
     }
 
     fn render_td(
@@ -268,7 +268,7 @@ impl TableDelegate for PreviewDelegate {
             if let Some(input_entity) = &global_read.import_preview_state.active_input {
                 div()
                     .size_full()
-                    .child(Input::new(&input_entity))
+                    .child(Input::new(input_entity))
                     .into_any_element()
             } else {
                 div().into_any_element()
@@ -300,7 +300,7 @@ impl TableDelegate for PreviewDelegate {
                             let input_entity = cx.new(|cx| {
                                 let mut s = InputState::new(window, cx);
                                 s.set_value(cell_value_clone.clone(), window, cx);
-                                s.focus_handle(cx).focus(window);
+                                s.focus_handle(cx).focus(window, cx);
                                 s
                             });
 

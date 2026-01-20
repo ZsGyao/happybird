@@ -26,7 +26,6 @@ use smallvec::SmallVec;
 
 use crate::{
     backend::db::models::Subject,
-    debug, error,
     ui::{
         export_modal::ExportModal,
         hb_icons::HappyBirdIcons,
@@ -34,7 +33,6 @@ use crate::{
         models::{GlobalAppState, Models},
         search::SearchPanel,
     },
-    warn,
 };
 
 gpui::actions!(
@@ -902,8 +900,7 @@ impl InfoPanel {
                                                         model.preview_file(cx, p)
                                                     });
                                             }
-                                        })
-                                        .ok();
+                                        });
                                     }
                                 }
                             })
@@ -973,7 +970,7 @@ impl Render for InfoPanel {
                             })
                         })
                         .size_full()
-                        .track_scroll(self.scroll_handle.clone())
+                        .track_scroll(&self.scroll_handle)
                         // Visual Guides
                         .with_decoration(
                             indent_guides(INDENT_SIZE, IndentGuideColors::panel(cx))
@@ -1022,7 +1019,7 @@ impl Render for InfoPanel {
                                         .collect()
                                 }),
                         )
-                        .track_scroll(self.scroll_handle.clone()),
+                        .track_scroll(&self.scroll_handle),
                     ),
             )
             // 4. Bottom Toolbar (新加入的固定底栏)
