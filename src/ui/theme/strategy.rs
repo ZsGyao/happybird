@@ -7,6 +7,8 @@ use gpui::{AnyElement, App, Pixels, Window, px};
 pub struct ThemeMetrics {
     /// Siderbar width
     pub sidebar_width: Pixels,
+    /// Sidebar collapse width
+    pub sidebar_collapsed_width: Pixels,
     /// Sidebar background opcaity (0.0 ~ 1.0)
     pub sidebar_bg_opacity: f32,
     /// Top header height
@@ -25,6 +27,7 @@ impl Default for ThemeMetrics {
             sidebar_bg_opacity: 1.0,
             content_rounding: px(0.0),
             titlebar_padding_left: px(72.0),
+            sidebar_collapsed_width: px(56.0),
         }
     }
 }
@@ -44,5 +47,3 @@ pub trait ThemeStrategy: Send + Sync {
 
     // add ...
 }
-
-
