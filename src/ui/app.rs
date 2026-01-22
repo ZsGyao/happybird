@@ -11,10 +11,9 @@ use crate::ui::{
     lock_screen::LockScreen,
     models::GlobalAppState,
     set_password_modal::SetPasswordModal,
-    sidebar::HappyBirdSideBar,
     status_bar::StatusBar,
     test_ui::HappyBirdComponentTest,
-    theme,
+    theme::manager::ThemeModel,
 };
 use gpui_component::{
     ActiveTheme, Root, StyledExt,
@@ -24,7 +23,6 @@ use gpui_component::{
 use crate::ui::{
     about::about_dialog,
     constants::{APP_ROUNDING, APP_SHADOW_SIZE},
-    header::Header,
     models::build_models,
 };
 
@@ -45,13 +43,12 @@ pub fn find_fonts(cx: &mut App) -> gpui::Result<()> {
 }
 
 pub struct WindowShadow {
-    pub header: Entity<Header>,
     pub info_panel: Entity<InfoPanel>,
     pub import_panel: Option<Entity<ImportPanel>>,
     pub test_table: Entity<HappyBirdComponentTest>,
     pub detail_panel: Entity<DetailPanel>,
     pub status_bar: Entity<StatusBar>,
-    pub sidebar: Entity<HappyBirdSideBar>,
+
     pub set_password_screen: Entity<SetPasswordModal>,
     pub lock_screen: Entity<LockScreen>,
 }
@@ -102,7 +99,6 @@ impl Render for WindowShadow {
             .0
             .read(cx)
             .is_sidebar_collapsed;
-        let sidebar_width = if is_collapsed { px(56.0) } else { px(180.0) };
 
         let is_locked = cx
             .global::<GlobalAppState>()
@@ -240,7 +236,7 @@ impl Render for WindowShadow {
                     .v_flex()
                     .max_w_full()
                     .max_h_full()
-                    .child(self.header.clone()) // 从此，窗口被绘制完成
+                    .child(cx.global::<ThemeModel>().active_strategy.render_header()) // 从此，窗口被绘制完成
                     .child(
                         div()
                             .flex()
@@ -250,10 +246,22 @@ impl Render for WindowShadow {
                             // SideBar: 固定在最左侧
                             .child(
                                 div()
-                                    .w(sidebar_width) // 固定宽度
+                                    .w(if is_collapsed {
+                                        cx.global::<ThemeModel>()
+                                            .active_strategy
+                                            .metrics()
+                                            .sidebar_collapsed_width
+                                    } else {
+                                        cx.global::<ThemeModel>()
+                                            .active_strategy
+                                            .metrics()
+                                            .sidebar_width
+                                    }) // 固定宽度
                                     .h_full()
                                     .flex_shrink_0() // 不允许压缩
-                                    .child(self.sidebar.clone()), // 渲染 SideBar
+                                    .child(
+                                        cx.global::<ThemeModel>().active_strategy.render_sidebar(),
+                                    ), // 渲染 SideBar
                             )
                             .child(
                                 div()
@@ -367,9 +375,8 @@ pub fn run() -> anyhow::Result<()> {
         let bounds = Bounds::centered(None, size(px(1024.0), px(700.0)), cx);
 
         find_fonts(cx).expect("unable to load fonts");
-        theme::init(cx);
-
         build_models(cx);
+        ThemeModel::init(cx);
         cx.activate(true);
 
         let win_ops = WindowOptions {
@@ -405,13 +412,11 @@ pub fn run() -> anyhow::Result<()> {
                 .detach();
 
                 let view = cx.new(|cx| WindowShadow {
-                    header: Header::new(cx),
                     info_panel: InfoPanel::new(window, cx),
                     import_panel: None,
                     test_table: HappyBirdComponentTest::new(cx, window),
                     detail_panel: DetailPanel::new(cx),
                     status_bar: StatusBar::new(cx),
-                    sidebar: HappyBirdSideBar::new(cx),
                     set_password_screen: SetPasswordModal::new(window, cx),
                     lock_screen: LockScreen::new(window, cx),
                 });

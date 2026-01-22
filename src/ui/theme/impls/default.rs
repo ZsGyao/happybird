@@ -1,12 +1,22 @@
-use gpui::{AnyElement, App, IntoElement, Window};
+use gpui::{AnyElement, App, Entity, IntoElement};
 
 use crate::ui::{
-    header::Header,
-    sidebar::HappyBirdSideBar,
+    components::layout::{header::default::Header, sidebar::default::HappyBirdSideBar},
     theme::strategy::{ThemeMetrics, ThemeStrategy},
 };
 
-pub struct DefaultTheme;
+pub struct DefaultTheme {
+    pub header: Entity<Header>,
+    pub sidebar: Entity<HappyBirdSideBar>,
+}
+
+impl DefaultTheme {
+    pub fn new(cx: &mut App) -> Self {
+        let header = Header::new(cx);
+        let sidebar = HappyBirdSideBar::new(cx);
+        Self { header, sidebar }
+    }
+}
 
 impl ThemeStrategy for DefaultTheme {
     fn name(&self) -> &str {
@@ -17,11 +27,11 @@ impl ThemeStrategy for DefaultTheme {
         ThemeMetrics::default()
     }
 
-    fn render_header(&self, _window: &mut Window, cx: &mut App) -> AnyElement {
-        Header::new(cx).into_any_element()
+    fn render_header(&self) -> AnyElement {
+        self.header.clone().into_any_element()
     }
 
-    fn render_sidebar(&self, _window: &mut Window, cx: &mut App) -> AnyElement {
-        HappyBirdSideBar::new(cx).into_any_element()
+    fn render_sidebar(&self) -> AnyElement {
+        self.sidebar.clone().into_any_element()
     }
 }

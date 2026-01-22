@@ -4,7 +4,7 @@ use gpui::{App, Global};
 use tracing::{error, info};
 
 use crate::ui::theme::{
-    impls::DefaultTheme,
+    impls::default::DefaultTheme,
     infra::{extra::AppThemeExtra, loader},
     strategy::ThemeStrategy,
 };
@@ -23,7 +23,7 @@ impl ThemeModel {
     pub fn init(cx: &mut App) {
         // init ThemeModel
         let model = Self {
-            active_strategy: Arc::new(DefaultTheme),
+            active_strategy: Arc::new(DefaultTheme::new(cx)),
         };
         cx.set_global(model);
 
@@ -71,7 +71,7 @@ impl ThemeModel {
             //     // 你可以在这里调用类似的加载逻辑来覆盖颜色
             // }
             _ => {
-                self.active_strategy = Arc::new(DefaultTheme);
+                self.active_strategy = Arc::new(DefaultTheme::new(cx));
                 // 如果切换回默认，且之前被改过颜色，这里应该重新加载默认 JSON
                 // Self::load_default_json_theme(cx);
             }

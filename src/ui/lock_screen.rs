@@ -13,7 +13,7 @@ use gpui_component::{
     v_flex,
 };
 
-use crate::ui::{hb_icons::HappyBirdIcons, models::GlobalAppState};
+use crate::ui::{models::GlobalAppState, theme::infra::hb_icons::HappyBirdIcons};
 
 /// 应用锁定屏幕组件。
 ///

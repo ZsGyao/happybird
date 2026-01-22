@@ -28,10 +28,10 @@ use crate::{
     backend::db::models::Subject,
     ui::{
         export_modal::ExportModal,
-        hb_icons::HappyBirdIcons,
         indent_guides::{IndentGuideColors, RenderedIndentGuide, indent_guides},
         models::{GlobalAppState, Models},
         search::SearchPanel,
+        theme::infra::hb_icons::HappyBirdIcons,
     },
 };
 

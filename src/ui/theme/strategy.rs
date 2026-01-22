@@ -41,9 +41,9 @@ pub trait ThemeStrategy: Send + Sync {
     /// Get the theme num metrics
     fn metrics(&self) -> ThemeMetrics;
     /// Component factory：Render header
-    fn render_header(&self, window: &mut Window, cx: &mut App) -> AnyElement;
+    fn render_header(&self) -> AnyElement;
     /// Component factory：Render Sidebar
-    fn render_sidebar(&self, window: &mut Window, cx: &mut App) -> AnyElement;
+    fn render_sidebar(&self) -> AnyElement;
 
     // add ...
 }

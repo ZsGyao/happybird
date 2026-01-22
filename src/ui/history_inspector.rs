@@ -16,9 +16,8 @@ use gpui_component::{
 use crate::{
     backend::db::models::ChangeLogEntry,
     ui::{
-        hb_icons::HappyBirdIcons,
         models::{GlobalAppState, HistoryStore, HistoryViewMode},
-        theme::infra::style::ThemedStyle,
+        theme::infra::{hb_icons::HappyBirdIcons, style::ThemedStyle},
     },
 };
 

@@ -1,5 +1,4 @@
-use crate::ui::hb_icons::HappyBirdIcons;
-use crate::ui::models::GlobalAppState;
+use crate::ui::{models::GlobalAppState, theme::infra::hb_icons::HappyBirdIcons};
 
 use gpui::{
     App, AppContext, Context, Entity, ParentElement, Render, Styled, Subscription, Window, div, px,

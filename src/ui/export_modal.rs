@@ -1,8 +1,8 @@
 // src/ui/export_modal.rs
 
 use crate::ui::{
-    hb_icons::HappyBirdIcons,
     models::{ExportScope, GlobalAppState},
+    theme::infra::hb_icons::HappyBirdIcons,
 };
 use gpui::{prelude::FluentBuilder, *};
 use gpui_component::{

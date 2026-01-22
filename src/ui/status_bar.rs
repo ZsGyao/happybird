@@ -1,6 +1,6 @@
 // src/ui/status_bar.rs
 
-use crate::ui::{hb_icons::HappyBirdIcons, models::GlobalAppState};
+use crate::ui::{models::GlobalAppState, theme::infra::hb_icons::HappyBirdIcons};
 use gpui::*;
 use gpui_component::{ActiveTheme, Icon, IconName, h_flex, label::Label};
 

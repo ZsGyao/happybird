@@ -16,9 +16,9 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 
 use crate::ui::{
-    hb_icons::HappyBirdIcons,
     history_inspector::HistoryInspector,
     models::{GlobalAppState, TabItem},
+    theme::infra::hb_icons::HappyBirdIcons,
 };
 
 // =============================================================================

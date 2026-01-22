@@ -11,8 +11,8 @@ use gpui_component::{
 };
 
 use crate::ui::{
-    hb_icons::HappyBirdIcons,
     models::{AppPage, GlobalAppState},
+    theme::infra::hb_icons::HappyBirdIcons,
 };
 
 /// 侧边导航栏组件。
